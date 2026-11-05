@@ -1,0 +1,62 @@
+diff --git a/src/modules/simulation/gz_bridge/GZBridge.cpp b/src/modules/simulation/gz_bridge/GZBridge.cpp
+index 3ef65e1..2706e6d 100644
+--- a/src/modules/simulation/gz_bridge/GZBridge.cpp
++++ b/src/modules/simulation/gz_bridge/GZBridge.cpp
+@@ -396,12 +396,34 @@ void GZBridge::magnetometerCallback(const gz::msgs::Magnetometer &msg)
+ 	report.device_id = id.devid;
+ 	report.temperature = this->_temperature;
+ 
+-	// FIMEX: once we're on jetty or later
+-	// The magnetometer plugin publishes in units of gauss and in a weird left handed coordinate system
+-	// https://github.com/gazebosim/gz-sim/pull/2460
+-	report.x = -msg.field_tesla().y();
+-	report.y = -msg.field_tesla().x();
+-	report.z = msg.field_tesla().z();
++	// With use_units_gauss=false and use_earth_frame_ned=false in server.config,
++	// Gazebo >= 8.6 reports tesla in the sensor's FLU frame.
++	// Older or standalone worlds may still report gauss with NED field components
++	// placed on the ENU world axes. Keep compatibility, but warn about the wrong heading.
++	const gz::math::Vector3d field(msg.field_tesla().x(), msg.field_tesla().y(), msg.field_tesla().z());
++
++	if (field.Length() > 1e-2) {
++		static bool legacy_warned = false;
++
++		if (!legacy_warned) {
++			PX4_WARN("gz magnetometer is in legacy mode (gauss, NED components on ENU axes), heading will be wrong. "
++				 "Set use_units_gauss and use_earth_frame_ned to false for the Magnetometer system");
++			legacy_warned = true;
++		}
++
++		report.x = -field.Y();
++		report.y = -field.X();
++		report.z = field.Z();
++
++	} else {
++		// Rotate FLU to FRD like the IMU and convert tesla to gauss for sensor_mag.
++		static const auto q_FLU_to_FRD = gz::math::Quaterniond(0, 1, 0, 0);
++		static constexpr double TESLA_TO_GAUSS = 1e4;
++		const gz::math::Vector3d field_frd = q_FLU_to_FRD.RotateVector(field) * TESLA_TO_GAUSS;
++		report.x = field_frd.X();
++		report.y = field_frd.Y();
++		report.z = field_frd.Z();
++	}
+ 
+ 	_sensor_mag_pub.publish(report);
+ }
+diff --git a/src/modules/simulation/gz_bridge/server.config b/src/modules/simulation/gz_bridge/server.config
+index 0001356..43d9d28 100644
+--- a/src/modules/simulation/gz_bridge/server.config
++++ b/src/modules/simulation/gz_bridge/server.config
+@@ -9,7 +9,11 @@
+     <plugin entity_name="*" entity_type="world" filename="gz-sim-air-speed-system" name="gz::sim::systems::AirSpeed"/>
+     <plugin entity_name="*" entity_type="world" filename="gz-sim-apply-link-wrench-system" name="gz::sim::systems::ApplyLinkWrench"/>
+     <plugin entity_name="*" entity_type="world" filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat"/>
+-    <plugin entity_name="*" entity_type="world" filename="gz-sim-magnetometer-system" name="gz::sim::systems::Magnetometer"/>
++    <plugin entity_name="*" entity_type="world" filename="gz-sim-magnetometer-system" name="gz::sim::systems::Magnetometer">
++      <!-- Correct earth frame and tesla output, supported since gz-sim 8.6. -->
++      <use_units_gauss>false</use_units_gauss>
++      <use_earth_frame_ned>false</use_earth_frame_ned>
++    </plugin>
+     <plugin entity_name="*" entity_type="world" filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+       <render_engine>ogre2</render_engine>
+     </plugin>

@@ -1,0 +1,416 @@
+diff --git a/models/advanced_plane/model.sdf b/models/advanced_plane/model.sdf
+index a722fba..aeae4ce 100644
+--- a/models/advanced_plane/model.sdf
++++ b/models/advanced_plane/model.sdf
+@@ -128,23 +128,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/lawnmower/model.sdf b/models/lawnmower/model.sdf
+index 3fb7f6c..6d026ec 100644
+--- a/models/lawnmower/model.sdf
++++ b/models/lawnmower/model.sdf
+@@ -220,23 +220,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/omnicopter/model.sdf b/models/omnicopter/model.sdf
+index a37927a..adce35f 100644
+--- a/models/omnicopter/model.sdf
++++ b/models/omnicopter/model.sdf
+@@ -130,23 +130,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/px4vision/model.sdf b/models/px4vision/model.sdf
+index 45228f1..268e765 100644
+--- a/models/px4vision/model.sdf
++++ b/models/px4vision/model.sdf
+@@ -71,23 +71,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/quadtailsitter/model.sdf b/models/quadtailsitter/model.sdf
+index fdc98b2..caab37b 100644
+--- a/models/quadtailsitter/model.sdf
++++ b/models/quadtailsitter/model.sdf
+@@ -133,23 +133,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/r1_rover/model.sdf b/models/r1_rover/model.sdf
+index af9e1b0..8e48a06 100644
+--- a/models/r1_rover/model.sdf
++++ b/models/r1_rover/model.sdf
+@@ -192,23 +192,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/rc_cessna/model.sdf b/models/rc_cessna/model.sdf
+index edba03b..e6b74c7 100644
+--- a/models/rc_cessna/model.sdf
++++ b/models/rc_cessna/model.sdf
+@@ -162,23 +162,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/rover_ackermann/model.sdf b/models/rover_ackermann/model.sdf
+index af5346e..e4611c4 100644
+--- a/models/rover_ackermann/model.sdf
++++ b/models/rover_ackermann/model.sdf
+@@ -49,23 +49,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/rover_differential/model.sdf b/models/rover_differential/model.sdf
+index dba245e..89cde6a 100644
+--- a/models/rover_differential/model.sdf
++++ b/models/rover_differential/model.sdf
+@@ -52,23 +52,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/rover_mecanum/model.sdf b/models/rover_mecanum/model.sdf
+index 695bf5d..14f72c5 100644
+--- a/models/rover_mecanum/model.sdf
++++ b/models/rover_mecanum/model.sdf
+@@ -49,23 +49,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/standard_vtol/model.sdf b/models/standard_vtol/model.sdf
+index c3b0bf8..014c062 100644
+--- a/models/standard_vtol/model.sdf
++++ b/models/standard_vtol/model.sdf
+@@ -207,23 +207,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/tiltrotor/model.sdf b/models/tiltrotor/model.sdf
+index 28afcb1..cb1c478 100644
+--- a/models/tiltrotor/model.sdf
++++ b/models/tiltrotor/model.sdf
+@@ -182,23 +182,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
+diff --git a/models/x500_base/model.sdf b/models/x500_base/model.sdf
+index bdeb665..473557b 100644
+--- a/models/x500_base/model.sdf
++++ b/models/x500_base/model.sdf
+@@ -234,23 +234,21 @@
+         <always_on>1</always_on>
+         <update_rate>100</update_rate>
+         <magnetometer>
+-          <!-- TODO: update to fix units and coordinate system when we move past Harmonic -->
+-          <!-- See https://github.com/gazebosim/gz-sim/pull/2460 -->
+-          <!-- 3mgauss RMS: NOTE: noise is in tesla but sensor reports data in gauss -->
++          <!-- 3 milligauss RMS = 3e-7 tesla; server.config enables tesla output. -->
+           <!-- Noise modeled after IIS2MDC -->
+           <x>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </x>
+           <y>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </y>
+           <z>
+             <noise type="gaussian">
+-              <stddev>0.0001</stddev>
++              <stddev>3e-7</stddev>
+             </noise>
+           </z>
+         </magnetometer>
