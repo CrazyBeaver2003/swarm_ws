@@ -11,6 +11,7 @@ find_package(rclcpp REQUIRED)
 find_package(px4_msgs REQUIRED)
 find_package(px4_ros2_cpp REQUIRED)
 find_package(swarm_interfaces REQUIRED)
+find_package(std_srvs REQUIRED)
 
 add_executable(telemetry_node
   src/telemetry_node.cpp
@@ -24,7 +25,7 @@ ament_target_dependencies(
 )
 
 ament_target_dependencies(
-  swarm_control_node PUBLIC swarm_interfaces
+  swarm_control_node PUBLIC swarm_interfaces std_srvs
 )
 
 target_compile_features(telemetry_node PRIVATE cxx_std_17)

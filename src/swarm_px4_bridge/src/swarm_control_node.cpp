@@ -1,15 +1,22 @@
+#include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <exception>
 #include <memory>
 
 #include <rclcpp/rclcpp.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include <swarm_interfaces/msg/fixed_wing_command.hpp>
 
+#include <px4_msgs/msg/vehicle_status.hpp>
 #include <px4_ros2/components/mode.hpp>
 #include <px4_ros2/components/node_with_mode.hpp>
 #include <px4_ros2/control/setpoint_types/fixedwing/lateral_longitudinal.hpp>
 #include <px4_ros2/odometry/global_position.hpp>
 #include <px4_ros2/odometry/local_position.hpp>
+#include <px4_ros2/utils/message_version.hpp>
+#include <px4_ros2/utils/subscription.hpp>
 
 class SwarmControlMode : public px4_ros2::ModeBase{
 public:
@@ -18,6 +25,9 @@ public:
         global_position_= std::make_shared<px4_ros2::OdometryGlobalPosition>(*this);
         local_position_= std::make_shared<px4_ros2::OdometryLocalPosition>(*this);
         setpoint_ = std::make_shared<px4_ros2::FwLateralLongitudinalSetpointType>(*this);
+        vehicle_status_ = std::make_shared<px4_ros2::Subscription<VehicleStatus>>(
+            *this,
+            "fmu/out/vehicle_status" + px4_ros2::getMessageNameVersion<VehicleStatus>());
         
         auto qos = rclcpp::QoS(1);
         qos.reliable().durability_volatile();
@@ -29,6 +39,12 @@ public:
                 onCommand(*msg);
             }
         );
+
+        reset_fault_service_ = node.create_service<ResetFault>(
+            "~/reset_fault",
+            [this](ResetFault::Request::SharedPtr, ResetFault::Response::SharedPtr response) {
+                onResetFault(*response);
+            });
     }
 
 
@@ -109,6 +125,8 @@ public:
 private:
     using Command = swarm_interfaces::msg::FixedWingCommand;
     using Clock = std::chrono::steady_clock;
+    using ResetFault = std_srvs::srv::Trigger;
+    using VehicleStatus = px4_msgs::msg::VehicleStatus;
 
     static constexpr double kTimeoutS = 2.0;
     static constexpr float kPi = 3.14159265358979323846f;
@@ -151,9 +169,6 @@ private:
     void onCommand(const Command& msg){
         checkCommandTimeout();
 
-        if (!mode_active_ || !targets_valid_ || command_timed_out_) {
-            return;
-        }
         // Невалидные команды не продлевают тайм-аут.
         if (
             !std::isfinite(msg.course_rad) ||
@@ -182,8 +197,7 @@ private:
 
         if (
             stamp_ns <= 0 ||
-            stamp_ns < activation_stamp_ns_ ||
-            stamp_ns <= last_command_stamp_ns_ ||
+            stamp_ns <= last_observed_command_stamp_ns_ ||
             age_s < -0.1 ||
             age_s >= kTimeoutS)
         {
@@ -194,6 +208,23 @@ private:
                 "Rejected command: stale, repeated or invalid timestamp");
             return;
         }
+
+        // Наблюдаем исправный источник даже в Hold и после тайм-аута.
+        // Это не меняет задания самолёту и не снимает ошибку автоматически.
+        last_observed_command_stamp_ns_ = stamp_ns;
+        observed_command_deadline_ =
+            Clock::now() + std::chrono::duration_cast<Clock::duration>(
+                std::chrono::duration<double>(kTimeoutS - std::max(age_s, 0.0)));
+
+        if (!mode_active_ || !targets_valid_ || command_timed_out_) {
+            return;
+        }
+
+        // Команда, созданная до активации, не становится заданием нового сеанса.
+        if (stamp_ns < activation_stamp_ns_ || stamp_ns <= last_command_stamp_ns_) {
+            return;
+        }
+
         course_sp_=msg.course_rad;
         altitude_amsl_sp_ = msg.altitude_amsl_m;
         airspeed_sp_ = msg.equivalent_airspeed_m_s;
@@ -201,9 +232,7 @@ private:
         last_command_stamp_ns_ = stamp_ns;
         // Учитываем возраст команды при получении.
         // Дальше отсчитываем срок по монотонным часам.
-        command_deadline_=
-            Clock::now() + std::chrono::duration_cast<Clock::duration>(
-                std::chrono::duration<double>(kTimeoutS - std::max(age_s, 0.0)));
+        command_deadline_ = observed_command_deadline_;
         RCLCPP_INFO_THROTTLE(
             node().get_logger(),
             *node().get_clock(),
@@ -214,6 +243,55 @@ private:
             airspeed_sp_);
 
     }
+
+    bool commandSourceFresh()
+    {
+        if (last_observed_command_stamp_ns_ <= 0 ||
+            Clock::now() >= observed_command_deadline_)
+        {
+            return false;
+        }
+
+        const double age_s =
+            (node().now().nanoseconds() - last_observed_command_stamp_ns_) * 1e-9;
+        return age_s >= -0.1 && age_s < kTimeoutS;
+    }
+
+    void onResetFault(ResetFault::Response& response)
+    {
+        response.success = false;
+
+        if (!vehicle_status_->lastValid()) {
+            response.message = "PX4 vehicle status is unavailable or stale";
+            return;
+        }
+
+        const auto& status = vehicle_status_->last();
+        if (mode_active_ || isActive() ||
+            status.nav_state != VehicleStatus::NAVIGATION_STATE_AUTO_LOITER ||
+            status.nav_state_user_intention != VehicleStatus::NAVIGATION_STATE_AUTO_LOITER ||
+            status.failsafe)
+        {
+            response.message = "Select Hold explicitly and wait for Swarm Control to deactivate";
+            return;
+        }
+
+        if (!dataReady()) {
+            response.message = "Valid position and horizontal velocity above 1 m/s are required";
+            return;
+        }
+
+        if (!commandSourceFresh()) {
+            response.message = "Resume fresh valid commands before resetting the fault";
+            return;
+        }
+
+        command_timed_out_ = false;
+        response.success = true;
+        response.message = "Fault cleared; select Swarm Control manually while commands continue";
+        RCLCPP_INFO(node().get_logger(), "%s", response.message.c_str());
+    }
+
     std::shared_ptr<
         px4_ros2::OdometryGlobalPosition> global_position_;
 
@@ -223,7 +301,9 @@ private:
     std::shared_ptr<
         px4_ros2::FwLateralLongitudinalSetpointType> setpoint_;
 
+    std::shared_ptr<px4_ros2::Subscription<VehicleStatus>> vehicle_status_;
     rclcpp::Subscription<Command>::SharedPtr command_sub_;
+    rclcpp::Service<ResetFault>::SharedPtr reset_fault_service_;
 
     float altitude_amsl_sp_ = 0.0f;
     float course_sp_ = 0.0f;
@@ -235,8 +315,10 @@ private:
 
     int64_t activation_stamp_ns_{0};
     int64_t last_command_stamp_ns_{0};
+    int64_t last_observed_command_stamp_ns_{0};
 
     Clock::time_point command_deadline_{};
+    Clock::time_point observed_command_deadline_{};
 };
 
 int main(int argc, char* argv[])
