@@ -1,8 +1,12 @@
 /**:
   ros__parameters:
     frame_id: "swarm_map"
+
     origin_lat_deg: 47.397971057728974
     origin_lon_deg: 8.546163739800146
     origin_alt_amsl_m: 0.0
+    origin_geoid_separation_m: 0.0
 
-    
+    publish_rate_hz: 20.0
+    state_timeout_s: 0.5
+    status_timeout_s: 2.0

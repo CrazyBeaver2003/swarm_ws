@@ -13,6 +13,10 @@
   <depend>px4_ros2_cpp</depend>
   <depend>swarm_interfaces</depend>
   <depend>std_srvs</depend>
+  <depend>rcl_interfaces</depend>
+  <depend>eigen</depend>
+  <depend>geographiclib</depend>
+  <build_depend>pkg-config</build_depend>
 
 
   <test_depend>ament_lint_auto</test_depend>

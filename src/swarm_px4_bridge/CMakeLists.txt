@@ -12,6 +12,13 @@ find_package(px4_msgs REQUIRED)
 find_package(px4_ros2_cpp REQUIRED)
 find_package(swarm_interfaces REQUIRED)
 find_package(std_srvs REQUIRED)
+find_package(rcl_interfaces REQUIRED)
+find_package(Eigen3 REQUIRED)
+find_package(PkgConfig REQUIRED)
+
+pkg_check_modules(
+  GEOGRAPHICLIB REQUIRED IMPORTED_TARGET geographiclib
+)
 
 add_executable(telemetry_node
   src/telemetry_node.cpp
@@ -21,7 +28,7 @@ add_executable(swarm_control_node
 )
 
 ament_target_dependencies(
-  telemetry_node rclcpp px4_msgs
+  telemetry_node PUBLIC rclcpp px4_msgs rcl_interfaces swarm_interfaces
 )
 
 ament_target_dependencies(
@@ -30,6 +37,11 @@ ament_target_dependencies(
 
 target_compile_features(telemetry_node PRIVATE cxx_std_17)
 target_compile_features(swarm_control_node PRIVATE cxx_std_17)
+
+target_link_libraries(telemetry_node PRIVATE
+  Eigen3::Eigen
+  PkgConfig::GEOGRAPHICLIB
+)
 
 target_link_libraries(swarm_control_node PRIVATE
   px4_ros2_cpp::px4_ros2_cpp
