@@ -30,6 +30,7 @@ def generate_launch_description():
                 "PX4_SIM_MODEL": "gz_rc_cessna",
                 "PX4_GZ_WORLD": "default",
                 "GZ_IP": "127.0.0.1",
+                "PX4_GZ_MODEL_POSE": "0,-60,0,0,0,0",
             },
             output="screen",
             emulate_tty=True,

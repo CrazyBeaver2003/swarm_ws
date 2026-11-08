@@ -15,6 +15,8 @@ find_package(geometry_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/FixedWingCommand.msg"
   "msg/VehicleState.msg"
+  "msg/RangeMeasurement.msg"
+  "msg/BaroHeight.msg"
   DEPENDENCIES builtin_interfaces std_msgs geometry_msgs
 )
 

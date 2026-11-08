@@ -1,0 +1,17 @@
+/**:
+  ros__parameters:
+    use_sim_time: true
+    frame_id: swarm_map
+    vehicle_ids: [1]
+    rate_hz: 20.0
+    max_pose_age_s: 0.2
+    seed: 42
+    rtt_noise_std_ns: 1.0
+    turnaround_delay_ns: 100000.0
+    calibrated_turnaround_delay_ns: 100000.0
+    delivery_latency_s: 0.04
+    delivery_jitter_s: 0.01
+    loss_probability: 0.02
+    baro_noise_std_m: 0.5
+    drop_all_ranges: false
+    drop_baro: false
