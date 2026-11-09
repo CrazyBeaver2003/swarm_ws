@@ -49,13 +49,39 @@ class GazeboBridge(Node):
         # A ROS-time timer would stop before /clock arrives or while paused.
         self._timer = self.create_timer(
             0.005, self._pump, clock=Clock(clock_type=ClockType.STEADY_TIME))
-        for msg_type, topic, callback in zip(
-                [GazeboClock, Pose_V], self._topics, [self._on_clock, self._on_poses]):
-            if not self._gz.subscribe(msg_type, topic, callback):
-                self.destroy_node()
-                raise RuntimeError(f'Could not subscribe to {topic}')
-        self.get_logger().info(f'Gazebo bridge: world={world}, models={names}')
+        self._world_service = f'/world/{world}/scene/info'
 
+        self._connect_timer = self.create_timer(
+            0.5,
+            self._connect_to_world,
+            clock=Clock(clock_type=ClockType.STEADY_TIME),
+        )
+
+        self.get_logger().info(
+            f'Gazebo bridge: waiting for world={world}, models={names}'
+        )
+
+    def _connect_to_world(self):
+        if not self._gz.service_info(self._world_service):
+            self.get_logger().info(
+                f'Waiting for Gazebo service {self._world_service}',
+                throttle_duration_sec=5.0,
+            )
+            return
+
+        for msg_type, topic, callback in zip(
+            [GazeboClock, Pose_V],
+            self._topics,
+            [self._on_clock, self._on_poses],
+        ):
+            if not self._gz.subscribe(msg_type, topic, callback):
+                raise RuntimeError(f'Could not subscribe to {topic}')
+
+        self._connect_timer.cancel()
+
+        self.get_logger().info(
+            'Gazebo world found; clock and pose subscriptions started'
+        )
     def _on_clock(self, message):
         stamp = (message.sim.sec, message.sim.nsec)
         stamp_ns = stamp[0] * 1_000_000_000 + stamp[1]
@@ -121,6 +147,8 @@ class GazeboBridge(Node):
             self._clock = None
             self._poses.clear()
         self._timer.cancel()
+        self._connect_timer.cancel()
+        
         for topic in self._topics:
             self._gz.unsubscribe(topic)
         return super().destroy_node()

@@ -26,7 +26,7 @@ setup(
         'console_scripts': [
             "gazebo_bridge = swarm_simulation.gazebo_bridge:main",
             'mesh_px4_bridge = swarm_simulation.mesh_px4_bridge:main',
-
+            'mesh_startup = swarm_simulation.mesh_startup:main',
         ],
     },
 )
