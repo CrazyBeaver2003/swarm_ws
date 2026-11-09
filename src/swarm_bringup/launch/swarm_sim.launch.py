@@ -426,7 +426,7 @@ def generate_launch_description():
             choices=['true', 'false'],
         ),
         DeclareLaunchArgument(
-            'domain_id', default_value='87'
+            'domain_id', default_value='0'
         ),
         DeclareLaunchArgument(
             'agent_port', default_value='8890'
