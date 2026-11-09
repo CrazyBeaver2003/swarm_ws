@@ -1,0 +1,20 @@
+/**:
+  ros__parameters:
+    use_sim_time: true
+    frame_id: swarm_map
+    publish_rate_hz: 20.0
+
+    stale_timeout_s: 0.8
+    degraded_after_s: 0.25
+    max_measurement_age_s: 1.0
+    baro_sync_tolerance_s: 0.08
+    future_tolerance_s: 0.02
+    reinitialize_after_s: 3.0
+
+    # Интенсивность шума ускорения, м²/с³.
+    acceleration_noise_density: 4.0
+
+    innovation_gate: 25.0
+    residual_gate: 16.0
+    max_geometry_condition: 1000.0
+    max_horizontal_std_m: 50.0

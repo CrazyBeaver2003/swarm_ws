@@ -27,6 +27,8 @@ setup(
     entry_points={
         'console_scripts': [
             'rtt_sensor = mesh_localization.sensor_node:main',
+            'mesh_localizer = mesh_localization.localizer_node:main',
+
         ],
     },
 )
