@@ -70,4 +70,18 @@ def generate_launch_description():
             ],
             output='screen',
         ),
+     Node(
+          package='swarm_simulation',
+          executable='mesh_px4_bridge',
+          namespace='plane_1',
+          parameters=[
+               reference,
+               {
+                    'use_sim_time': True,
+                    'vehicle_id': 1,
+                    'px4_namespace': '',
+               },
+          ],
+          output='screen',
+     ),
     ])
