@@ -13,6 +13,7 @@
   <exec_depend>mesh_localization</exec_depend>
   <exec_depend>swarm_simulation</exec_depend>
   <exec_depend>swarm_px4_bridge</exec_depend>
+  <exec_depend>swarm_control</exec_depend>
 
   <exec_depend>launch</exec_depend>
 

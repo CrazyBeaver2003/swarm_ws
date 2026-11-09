@@ -32,9 +32,10 @@ class Command:
     speed:float
 
 class Follower:
-    def __init__(self, behind=60.0, above=35.0):
+    def __init__(self, behind=60.0, above=35.0, right= 0.0):
         self.behind = behind
         self.above = above
+        self.right = right
         self.heading = None
         self.omega = 0.0
         self.previous = None
@@ -56,8 +57,11 @@ class Follower:
         self.omega += alpha * (-delta / dt - self.omega)
         self.omega = clamp(self.omega, -leader.speed/120.0, leader.speed/120.0)
 
-        ox = -self.behind * math.sin(leader.course)
-        oy = -self.behind * math.cos(leader.course)
+        forward_x = math.sin(leader.course)
+        forward_y = math.cos(leader.course)
+
+        ox = -self.behind * forward_x + self.right * forward_y
+        oy = -self.behind * forward_y - self.right * forward_x
 
         target = (
             leader.x + ox,

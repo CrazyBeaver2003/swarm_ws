@@ -26,6 +26,9 @@ class FollowerNode(Node):
             'external_nav_state': 23,
             'frame_id': 'swarm_map',
             'origin_alt_amsl_m': 0.0,
+            'behind_m': 60.0,
+            'right_m': 0.0,
+            'above_m': 35.0,           
         }
 
         for name, value in defaults.items():
@@ -36,6 +39,22 @@ class FollowerNode(Node):
         self.external = self.get_parameter('external_nav_state').value
         self.frame = self.get_parameter('frame_id').value
         self.origin = self.get_parameter('origin_alt_amsl_m').value
+        self.behind = self.get_parameter('behind_m').value
+        self.right = self.get_parameter('right_m').value
+        self.above = self.get_parameter('above_m').value
+
+        if not (
+            all(
+                math.isfinite(value)
+                for value in (self.behind, self.right, self.above)
+            )
+            and self.behind > 0.0
+            and self.above > 0.0
+        ):
+            raise ValueError(
+                'Offsets must be finite; '
+                'behind_m and above_m must be positive'
+            )
 
         if not self.get_parameter('use_sim_time').value:
             raise ValueError('Run with use_sim_time:=true')
@@ -97,7 +116,7 @@ class FollowerNode(Node):
         self.system_clock = Clock(clock_type=ClockType.SYSTEM_TIME)
         self.steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
 
-        self.core = Follower()
+        self.core = self.make_controller()
         self.active = False
         self.fault = False
         self.counters = None
@@ -116,7 +135,12 @@ class FollowerNode(Node):
         self.get_logger().info(
             'Waiting for two airborne aircraft; no automatic activation'
         )
-
+    def make_controller(self):
+        return Follower(
+            behind=self.behind,
+            above=self.above,
+            right=self.right,
+        )
     def sample(self, vehicle_id, kind, sim, wall):
         entry = self.cache.get((vehicle_id, kind))
 
@@ -281,7 +305,7 @@ class FollowerNode(Node):
                     'Follower must be in Hold, including user intention'
                 )
 
-            self.core = Follower()
+            self.core = self.make_controller()
             self.active = False
             self.fault = False
             self.counters = None
@@ -326,7 +350,7 @@ class FollowerNode(Node):
             if self.active:
                 self.stop('simulation time jump')
             else:
-                self.core = Follower()
+                self.core = self.make_controller()
 
                 if dt < 0.0:
                     self.cache.clear()
@@ -341,7 +365,7 @@ class FollowerNode(Node):
             if self.active:
                 self.stop(str(error))
             else:
-                self.core = Follower()
+                self.core = self.make_controller()
                 self.counters = None
 
                 if wall - self.last_log > 3.0:
@@ -369,10 +393,10 @@ class FollowerNode(Node):
             return
 
         if not active and counters != self.counters:
-            self.core = Follower()
+            self.core = self.make_controller()
 
         if status.nav_state not in (4, self.external):
-            self.core = Follower()
+            self.core = self.make_controller()
             return
 
         if active and not self.active:
