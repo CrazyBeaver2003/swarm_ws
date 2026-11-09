@@ -1,0 +1,5 @@
+string formation
+float64 spacing_m
+---
+bool success
+string message

@@ -36,9 +36,44 @@ class Follower:
         self.behind = behind
         self.above = above
         self.right = right
+        self.requested_behind = behind
+        self.requested_right = right
         self.heading = None
         self.omega = 0.0
         self.previous = None
+
+    def set_slot(self, behind, right):
+        if not (
+            math.isfinite(behind)
+            and math.isfinite(right)
+            and behind > 0.0
+        ):
+            raise ValueError('Invalid formation offset')
+
+        self.requested_behind = behind
+        self.requested_right = right
+
+
+    def advance_slot(self, dt):
+        db = self.requested_behind - self.behind
+        dr = self.requested_right - self.right
+
+        distance = math.hypot(db, dr)
+
+        if distance < 1e-9:
+            return 0.0, 0.0
+
+        # Скорость изменения смещения относительно лидера — до 2 м/с.
+        scale = min(1.0, 2.0 * dt / distance)
+
+        step_b = db * scale
+        step_r = dr * scale
+
+        self.behind += step_b
+        self.right += step_r
+
+        return step_b / dt, step_r / dt
+            
 
     def step(self, leader, follower, dt, active):
         if not math.isfinite(dt) or not 0.0 < dt <= 0.25:
@@ -56,6 +91,11 @@ class Follower:
         # угловая скорость в ENU — против часовой.
         self.omega += alpha * (-delta / dt - self.omega)
         self.omega = clamp(self.omega, -leader.speed/120.0, leader.speed/120.0)
+
+        behind_rate, right_rate = 0.0, 0.0
+
+        if active:
+            behind_rate, right_rate = self.advance_slot(dt)
 
         forward_x = math.sin(leader.course)
         forward_y = math.cos(leader.course)
@@ -89,8 +129,25 @@ class Follower:
         )
 
         # Скорость движущегося места в строю + коррекция ошибки.
-        vx = leader.vx - self.omega * oy + cx * scale
-        vy = leader.vy + self.omega * ox + cy * scale
+        slot_vx = (
+            -behind_rate * forward_x
+            + right_rate * forward_y
+        )
+
+        slot_vy = (
+            -behind_rate * forward_y
+            - right_rate * forward_x
+        )
+        
+        # 4 составляющие:
+        # движение лидера
+        # + вращение строя
+        # + перемещение места при перестроении
+        # + исправление ошибки ведомого
+        vx = leader.vx - self.omega * oy + slot_vx + cx * scale
+        vy = leader.vy + self.omega * ox + slot_vy + cy * scale
+
+
 
         norm = math.hypot(vx, vy)
 

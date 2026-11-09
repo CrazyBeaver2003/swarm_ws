@@ -18,6 +18,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RangeMeasurement.msg"
   "msg/BaroHeight.msg"
   "msg/MeshEstimate.msg"
+  "srv/SetFormation.srv"
   DEPENDENCIES builtin_interfaces std_msgs geometry_msgs
 )
 

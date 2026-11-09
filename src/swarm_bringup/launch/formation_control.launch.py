@@ -70,6 +70,7 @@ def setup(context):
                         'behind_m': float(behind),
                         'right_m': float(right),
                         'above_m': float(35.0 * index),
+                        'slot_index': index,
                     },
                 ],
                 output='screen',

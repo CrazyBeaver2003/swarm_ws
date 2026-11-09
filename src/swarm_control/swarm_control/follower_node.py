@@ -12,8 +12,13 @@ from swarm_interfaces.msg import (
     MeshEstimate,
     VehicleState,
 )
+from swarm_interfaces.srv import SetFormation
 
 from .follower_core import Follower, State
+
+
+class StatusNotFresh(ValueError):
+    pass
 
 
 class FollowerNode(Node):
@@ -28,7 +33,8 @@ class FollowerNode(Node):
             'origin_alt_amsl_m': 0.0,
             'behind_m': 60.0,
             'right_m': 0.0,
-            'above_m': 35.0,           
+            'above_m': 35.0,
+            'slot_index': 1,           
         }
 
         for name, value in defaults.items():
@@ -42,6 +48,11 @@ class FollowerNode(Node):
         self.behind = self.get_parameter('behind_m').value
         self.right = self.get_parameter('right_m').value
         self.above = self.get_parameter('above_m').value
+
+        self.slot_index = self.get_parameter('slot_index').value
+
+        if not 1 <= self.slot_index <= 4:
+            raise ValueError('slot_index must be 1..4')
 
         if not (
             all(
@@ -113,6 +124,12 @@ class FollowerNode(Node):
             self.reset,
         )
 
+        self.formation_service = self.create_service(
+            SetFormation,
+            '~/set_formation',
+            self.set_formation,
+        )
+
         self.system_clock = Clock(clock_type=ClockType.SYSTEM_TIME)
         self.steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
 
@@ -125,6 +142,7 @@ class FollowerNode(Node):
         self.clock_at = time.monotonic()
         self.last_stamp = 0
         self.last_log = 0.0
+        self.status_wait_since = None
 
         self.timer = self.create_timer(
             0.05,
@@ -135,12 +153,89 @@ class FollowerNode(Node):
         self.get_logger().info(
             'Waiting for two airborne aircraft; no automatic activation'
         )
+
+    def set_formation(self, request, response):
+        try:
+            formation = request.formation
+            spacing = request.spacing_m
+
+            if formation not in ('line', 'wedge'):
+                raise ValueError('formation must be line or wedge')
+
+            if (
+                not math.isfinite(spacing)
+                or not 45.0 <= spacing <= 120.0
+            ):
+                raise ValueError('spacing_m must be 45..120')
+
+            if self.fault or not self.active:
+                raise ValueError(
+                    'Follower must be active and free of faults'
+                )
+
+            _, counters, statuses = self.inputs(
+                self.get_clock().now().nanoseconds * 1e-9,
+                time.monotonic(),
+            )
+
+            status = statuses[1]
+
+            if (
+                status.nav_state != self.external
+                or status.nav_state_user_intention != self.external
+                or counters != self.counters
+            ):
+                raise ValueError(
+                    'Mode or localization changed; wait for status'
+                )
+
+            index = self.slot_index
+
+            if formation == 'line':
+                behind = index * spacing
+                right = 0.0
+
+            else:
+                row = (index + 1) // 2
+                side = -1.0 if index % 2 else 1.0
+
+                behind = row * spacing
+                right = side * row * spacing * 0.8
+
+            self.core.set_slot(behind, right)
+
+            # Сохраняем принятую цель для последующих сбросов ядра.
+            self.behind = behind
+            self.right = right
+
+            response.success = True
+            response.message = (
+                f'Accepted {formation}: '
+                f'behind={behind:.1f}m, right={right:.1f}m. '
+                'Transition is not yet complete'
+            )
+
+            self.get_logger().info(response.message)
+
+        except ValueError as error:
+            response.success = False
+            response.message = str(error)
+
+        return response
+    
     def make_controller(self):
-        return Follower(
-            behind=self.behind,
+        old = getattr(self, 'core', None)
+
+        controller = Follower(
+            behind=old.behind if old is not None else self.behind,
             above=self.above,
-            right=self.right,
+            right=old.right if old is not None else self.right,
         )
+
+        controller.set_slot(self.behind, self.right)
+
+        return controller
+    
     def sample(self, vehicle_id, kind, sim, wall):
         entry = self.cache.get((vehicle_id, kind))
 
@@ -167,33 +262,38 @@ class FollowerNode(Node):
 
         return msg, max(age, 0.0)
 
+    def check_statuses(self, sim, wall):
+        statuses = []
+        stale = []
+        for vehicle_id in (self.leader, self.follower):
+            status, _ = self.sample(vehicle_id, 'state', sim, wall)
+            received = self.cache[(vehicle_id, 'state')][1]
+            age = status.status_age_s + wall - received
+            if not math.isfinite(status.status_age_s) or status.status_age_s < 0.0:
+                raise ValueError(f'plane_{vehicle_id}: invalid status age')
+            if not status.status_valid or age > 1.5:
+                stale.append(
+                    f'plane_{vehicle_id}: status stale; '
+                    f'valid={status.status_valid}, '
+                    f'source_age={status.status_age_s:.3f}s, total_age={age:.3f}s'
+                )
+            elif not status.armed or status.failsafe:
+                raise ValueError(
+                    f'plane_{vehicle_id}: armed={status.armed}, '
+                    f'failsafe={status.failsafe}'
+                )
+            statuses.append(status)
+        if stale:
+            raise StatusNotFresh('; '.join(stale))
+        return statuses
+
     def inputs(self, sim, wall):
         states = []
         counters = []
-        statuses = []
+        statuses = self.check_statuses(sim, wall)
 
         for vehicle_id in (self.leader, self.follower):
-            status, _ = self.sample(
-                vehicle_id, 'state', sim, wall
-            )
-            mesh, age = self.sample(
-                vehicle_id, 'mesh', sim, wall
-            )
-
-            received = self.cache[(vehicle_id, 'state')][1]
-            status_age = status.status_age_s + wall - received
-
-            if (
-                not status.status_valid
-                or not status.armed
-                or status.failsafe
-                or not math.isfinite(status.status_age_s)
-                or status.status_age_s < 0.0
-                or not 0.0 <= status_age <= 1.5
-            ):
-                raise ValueError(
-                    f'plane_{vehicle_id}: not ready for formation'
-                )
+            mesh, age = self.sample(vehicle_id, 'mesh', sim, wall)
 
             values = (
                 mesh.position.x,
@@ -236,7 +336,6 @@ class FollowerNode(Node):
 
             states.append(state)
             counters.append(mesh.reset_counter)
-            statuses.append(status)
 
         return states, tuple(counters), statuses
 
@@ -308,6 +407,7 @@ class FollowerNode(Node):
             self.core = self.make_controller()
             self.active = False
             self.fault = False
+            self.status_wait_since = None
             self.counters = None
             self.last_sim = None
             self.clock_at = time.monotonic()
@@ -361,7 +461,22 @@ class FollowerNode(Node):
         try:
             states, counters, statuses = self.inputs(sim, wall)
 
+        except StatusNotFresh as error:
+            if self.active:
+                if self.status_wait_since is None:
+                    self.status_wait_since = wall
+                    self.get_logger().warning(
+                        f'{error}; pausing commands for up to 0.5s'
+                    )
+                elif wall - self.status_wait_since >= 0.5:
+                    self.stop(f'Status did not recover: {error}')
+            elif wall - self.last_log > 3.0:
+                self.get_logger().info(f'Waiting: {error}')
+                self.last_log = wall
+            return
+
         except ValueError as error:
+            self.status_wait_since = None
             if self.active:
                 self.stop(str(error))
             else:
@@ -374,6 +489,7 @@ class FollowerNode(Node):
 
             return
 
+        self.status_wait_since = None
         status = statuses[1]
         active = status.nav_state == self.external
 
