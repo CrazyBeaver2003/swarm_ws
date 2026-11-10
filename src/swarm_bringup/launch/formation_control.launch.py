@@ -76,6 +76,20 @@ def setup(context):
                 output='screen',
             )
         )
+    nodes.append(
+        Node(
+            package='swarm_control',
+            executable='swarm_manager',
+            parameters=[
+                reference,
+                {
+                    'use_sim_time': True,
+                    'vehicle_ids': list(range(1, count + 1)),
+                },
+            ],
+            output='screen',
+        )
+    )
 
     return nodes
 

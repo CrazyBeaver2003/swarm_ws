@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'follower = swarm_control.follower_node:main',
+            'swarm_manager = swarm_control.swarm_manager:main',
 
         ],
     },
