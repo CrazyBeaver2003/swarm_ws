@@ -20,6 +20,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/MeshEstimate.msg"
   "srv/SetFormation.srv"
   "srv/SetLeaderCommand.srv"
+  "srv/SetMissionGoal.srv"
+
   DEPENDENCIES builtin_interfaces std_msgs geometry_msgs
 )
 

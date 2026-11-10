@@ -12,6 +12,7 @@ from swarm_interfaces.msg import VehicleState
 from swarm_interfaces.srv import SetFormation
 from swarm_control.takeoff_sequence import TakeoffSequence
 from swarm_control.flight_coordinator import FlightCoordinator
+from swarm_control.mission_controller import MissionController
 
 class SwarmManager(Node):
     def __init__(self):
@@ -109,6 +110,7 @@ class SwarmManager(Node):
         
         self.takeoff_sequence = TakeoffSequence(self)
         self.flight = FlightCoordinator(self)
+        self.mission = MissionController(self)
 
     async def wait_until(self, predicate, timeout):
         result = Future(executor=self.executor)
@@ -294,8 +296,10 @@ class SwarmManager(Node):
             and not state.failsafe
         )
 
-    async def hold(self, request, response):
+    async def hold(self, request, response, *, _mission=False):
         response.success = False
+        if not _mission:
+            self.mission.cancel('Operator requested Hold')
 
         if self.operation == 'hold':
             response.message = 'Hold operation already running'

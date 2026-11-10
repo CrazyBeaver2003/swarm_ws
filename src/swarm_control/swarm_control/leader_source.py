@@ -170,6 +170,9 @@ class LeaderSource:
 
     def set_command(self, request, response):
         response.success = False
+        if hasattr(self.m, 'mission') and self.m.mission.owns_control:
+            response.message = 'Mission owns leader commands; use Hold or mission/cancel first'
+            return response
         values = (request.course_rad, request.altitude_amsl_m,
                   request.equivalent_airspeed_m_s)
         if not all(math.isfinite(v) for v in values):

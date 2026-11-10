@@ -34,6 +34,7 @@ class FollowerNode(Node):
             'behind_m': 60.0,
             'right_m': 0.0,
             'above_m': 35.0,
+            'leader_peer_prefix': '',
             'slot_index': 1,           
         }
 
@@ -80,6 +81,9 @@ class FollowerNode(Node):
         ):
             raise ValueError('Invalid controller parameters')
 
+        peer_prefix = self.get_parameter('leader_peer_prefix').value.rstrip('/')
+        if peer_prefix and not peer_prefix.startswith('/'):
+            raise ValueError('leader_peer_prefix must be absolute or empty')
         self.cache = {}
         self.subscriptions_ = []
 
@@ -93,7 +97,7 @@ class FollowerNode(Node):
                 self.subscriptions_.append(
                     self.create_subscription(
                         message_type,
-                        f'/plane_{vehicle_id}/{topic}',
+                        f'{peer_prefix if vehicle_id == self.leader else ""}/plane_{vehicle_id}/{topic}',
                         lambda msg, key=key: self.cache.update({
                             key: (msg, time.monotonic())
                         }),

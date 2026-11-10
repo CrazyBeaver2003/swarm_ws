@@ -6,6 +6,7 @@ from std_srvs.srv import Trigger
 from swarm_interfaces.msg import FixedWingCommand
 
 from .leader_source import LeaderSource
+from .separation_guard import SeparationGuard
 
 
 class ActivationError(RuntimeError):
@@ -22,6 +23,7 @@ class FlightCoordinator:
         if not 23 <= self.external <= 30:
             raise ValueError('external_nav_state must be 23..30')
         self.leader = LeaderSource(manager, self.external)
+        self.separation = SeparationGuard(manager)
         self.system = Clock(clock_type=ClockType.SYSTEM_TIME)
         self.engaged = False
         self.bad_since = None
@@ -89,6 +91,9 @@ class FlightCoordinator:
         return True
 
     def problem(self, confirmed, requested):
+        separation = self.separation.problem()
+        if separation:
+            return separation
         for i in self.m.ids:
             s = self.state(i)
             if s is None:
@@ -156,9 +161,12 @@ class FlightCoordinator:
         missing = [i for i in candidates if not self.m.hold_confirmed(i, started)]
         return self.m.report(results) + f'; Hold unconfirmed={missing}'
 
-    async def activate(self, request, response):
+    async def activate(self, request, response, *, _mission=False):
         m = self.m
         response.success = False
+        if hasattr(m, 'mission') and m.mission.owns_control and not _mission:
+            response.message = 'Mission owns flight control; use Hold to cancel'
+            return response
         if m.operation is not None:
             response.message = f'Manager busy: {m.operation}'
             return response
@@ -251,6 +259,8 @@ class FlightCoordinator:
         self.m.generation += 1
         generation = self.m.generation
         self.m.operation = 'recover'
+        if hasattr(self.m, 'mission'):
+            self.m.mission.cancel(reason)
         self.m.get_logger().error(reason)
         self.m.executor.create_task(self.recovery_task(generation))
 

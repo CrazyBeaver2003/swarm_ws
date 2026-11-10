@@ -91,9 +91,12 @@ class TakeoffSequence:
             and self.in_hold(state) and self.navigation_ready(vehicle_id, state)
         )
 
-    async def run(self, request, response):
+    async def run(self, request, response, *, _mission=False):
         m = self.m
         response.success = False
+        if hasattr(m, 'mission') and m.mission.owns_control and not _mission:
+            response.message = 'Mission owns flight control; use Hold to cancel'
+            return response
         if m.operation is not None:
             response.message = f'Manager busy: {m.operation}'
             return response

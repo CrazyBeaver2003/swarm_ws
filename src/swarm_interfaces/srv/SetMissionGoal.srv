@@ -1,0 +1,7 @@
+# Goal in the common ENU map, metres; working altitude is chosen automatically.
+float64 east_m
+float64 north_m
+float32 arrival_radius_m
+---
+bool success
+string message
