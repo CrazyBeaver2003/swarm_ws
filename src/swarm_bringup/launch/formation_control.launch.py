@@ -85,6 +85,10 @@ def setup(context):
                 {
                     'use_sim_time': True,
                     'vehicle_ids': list(range(1, count + 1)),
+                    'takeoff_heights_m': [
+                        70.0 + 35.0 * i for i in range(count)
+                    ],
+                    'takeoff_wait_s': 330.0,
                 },
             ],
             output='screen',

@@ -7,6 +7,7 @@
 #include <string>
 #include <stdexcept>
 
+
 #include <rclcpp/rclcpp.hpp>
 #include <std_srvs/srv/trigger.hpp>
 #include <swarm_interfaces/msg/fixed_wing_command.hpp>
@@ -21,6 +22,8 @@
 #include <px4_ros2/utils/subscription.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_land_detected.hpp>
+
+#include "takeoff_controller.hpp"
 
 class SwarmControlMode : public px4_ros2::ModeBase{
 public:
@@ -71,11 +74,22 @@ public:
                 px4_ros2::getMessageNameVersion<VehicleCommand>(),
             10);
 
+        takeoff_ = std::make_unique<TakeoffController>(
+            node,
+            flight_namespace,
+            vehicle_status_,
+            land_detected_,
+            global_position_,
+            local_position_,
+            mode_command_pub_);
+
         hold_service_ = node.create_service<FlightRequest>(
             flight_namespace + "/hold",
             [this](
                 FlightRequest::Request::SharedPtr,
                 FlightRequest::Response::SharedPtr response) {
+                takeoff_->cancel();
+
                 requestMode(
                     VehicleStatus::NAVIGATION_STATE_AUTO_LOITER,
                     *response);
@@ -239,6 +253,10 @@ private:
     void requestActivation(FlightRequest::Response& response)
     {
         response.success = false;
+        if (takeoff_->busy()) {
+            response.message = "Wait for takeoff completion";
+            return;
+        }
         checkCommandTimeout();
 
         if (!flightStatusFresh()) {
@@ -480,6 +498,7 @@ private:
 
     Clock::time_point command_deadline_{};
     Clock::time_point observed_command_deadline_{};
+    std::unique_ptr<TakeoffController> takeoff_;
 };
 
 int main(int argc, char* argv[])

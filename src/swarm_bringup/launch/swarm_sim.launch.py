@@ -384,6 +384,8 @@ def setup(context):
                 {
                     'use_sim_time': False,
                     'flight_namespace': f'/{namespace}/flight',
+                    'takeoff_height_m': 70.0 + 35.0 * instance,
+                    'takeoff_timeout_s': 300.0,
                 },
             ],
             output='screen',

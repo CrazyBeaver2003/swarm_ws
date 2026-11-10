@@ -10,6 +10,7 @@ from rclpy.task import Future
 from std_srvs.srv import Trigger
 from swarm_interfaces.msg import VehicleState
 from swarm_interfaces.srv import SetFormation
+from swarm_control.takeoff_sequence import TakeoffSequence
 
 
 class SwarmManager(Node):
@@ -105,6 +106,8 @@ class SwarmManager(Node):
             f'Manager ready: leader={self.ids[0]}, '
             f'followers={self.ids[1:]}'
         )
+        
+        self.takeoff_sequence = TakeoffSequence(self)
 
     async def wait_until(self, predicate, timeout):
         result = Future(executor=self.executor)
