@@ -1,0 +1,11 @@
+# Курс относительно севера, радианы [-pi, pi].
+float32 course_rad
+
+# Высота над средним уровнем моря, метры.
+float32 altitude_amsl_m
+
+# Эквивалентная воздушная скорость, м/с.
+float32 equivalent_airspeed_m_s
+---
+bool success
+string message

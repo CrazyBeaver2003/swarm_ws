@@ -85,6 +85,7 @@ def setup(context):
                 {
                     'use_sim_time': True,
                     'vehicle_ids': list(range(1, count + 1)),
+                    'external_nav_state': external,
                     'takeoff_heights_m': [
                         70.0 + 35.0 * i for i in range(count)
                     ],

@@ -11,7 +11,7 @@ from std_srvs.srv import Trigger
 from swarm_interfaces.msg import VehicleState
 from swarm_interfaces.srv import SetFormation
 from swarm_control.takeoff_sequence import TakeoffSequence
-
+from swarm_control.flight_coordinator import FlightCoordinator
 
 class SwarmManager(Node):
     def __init__(self):
@@ -108,6 +108,7 @@ class SwarmManager(Node):
         )
         
         self.takeoff_sequence = TakeoffSequence(self)
+        self.flight = FlightCoordinator(self)
 
     async def wait_until(self, predicate, timeout):
         result = Future(executor=self.executor)
@@ -304,6 +305,7 @@ class SwarmManager(Node):
         self.generation += 1
         generation = self.generation
         self.operation = 'hold'
+        self.flight.begin_hold()
 
         started = time.monotonic()
 
@@ -351,6 +353,7 @@ class SwarmManager(Node):
 
         finally:
             if generation == self.generation:
+                self.flight.finish_hold()
                 self.operation = None
 
 
