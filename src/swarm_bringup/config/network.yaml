@@ -1,0 +1,7 @@
+/**:
+  ros__parameters:
+    latency_s: 0.02
+    jitter_s: 0.005
+    loss_probability: 0.005
+    seed: 7
+    capacity: 4096

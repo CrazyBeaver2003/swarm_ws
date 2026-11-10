@@ -65,6 +65,7 @@ def setup(context):
                     {
                         'use_sim_time': True,
                         'leader_id': 1,
+                        'leader_peer_prefix': LaunchConfiguration('leader_peer_prefix').perform(context),
                         'follower_id': vehicle_id,
                         'external_nav_state': external,
                         'behind_m': float(behind),
@@ -101,6 +102,7 @@ def setup(context):
 
 def generate_launch_description():
     return LaunchDescription([
+        DeclareLaunchArgument('leader_peer_prefix', default_value=''),
         DeclareLaunchArgument(
             'count',
             default_value='3',
