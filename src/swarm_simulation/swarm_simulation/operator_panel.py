@@ -36,7 +36,13 @@ SERVICES = {
     'mission': ('/swarm/mission/set_goal', SetMissionGoal, 20.0),
     'cancel': ('/swarm/mission/cancel', Trigger, 25.0),
     'save': ('/swarm/evaluation/save', Trigger, 30.0),
+    'measurement_start': ('/swarm/evaluation/start', Trigger, 15.0),
+    'measurement_stop': ('/swarm/evaluation/stop', Trigger, 15.0),
+    'measurement_retry': ('/swarm/evaluation/retry', Trigger, 15.0),
 }
+
+MEASUREMENT_ACTIONS = frozenset(('measurement_start', 'measurement_stop', 'measurement_retry'))
+MEASUREMENT_PHASES = frozenset(('idle', 'measuring', 'exporting', 'completed', 'failed', 'cancelled'))
 
 
 def finite_json(value):
@@ -213,8 +219,11 @@ class OperatorPanel(Node):
         self.path = []
         self.mission = {'phase': 'waiting'}
         self.network = {}
+        self.measurement = {'phase': 'waiting', 'stale': True}
+        self.measurement_received = None
         self.stations = self.load_stations(self.get_parameter('stations_file').value)
         self.snapshot_data = {'vehicles': [], 'jobs': [], 'mission': {'phase': 'waiting'},
+                              'measurement': dict(self.measurement),
                               'stations': self.stations, 'origin_alt_amsl_m': self.origin}
         self.service_clients = {action: self.create_client(service, name)
                         for action, (name, service, _) in SERVICES.items()}
@@ -238,6 +247,8 @@ class OperatorPanel(Node):
             String, '/swarm/mission/status', self.receive_mission, 10))
         self.subscriptions_.append(self.create_subscription(
             String, '/swarm/network/stats', self.receive_network, 10))
+        self.subscriptions_.append(self.create_subscription(
+            String, '/swarm/evaluation/status', self.receive_measurement, path_qos))
         self.steady = Clock(clock_type=ClockType.STEADY_TIME)
         self.timer = self.create_timer(0.05, self.tick, clock=self.steady)
         html_path = FilePath(__file__).with_name('panel.html')
@@ -318,9 +329,28 @@ class OperatorPanel(Node):
         except (ValueError, TypeError):
             pass
 
+    def receive_measurement(self, msg):
+        # A new browser connection receives the recorder's current state through
+        # this latched topic. Local HTTP acceptance is never a measurement result.
+        if len(msg.data) > 262144:
+            return
+        try:
+            value = json.loads(msg.data)
+            if not isinstance(value, dict) or value.get('phase') not in MEASUREMENT_PHASES:
+                return
+            self.measurement = value
+            self.measurement_received = time.monotonic()
+        except (ValueError, TypeError):
+            pass
+
     def snapshot(self):
         with self.lock:
-            return deepcopy(self.snapshot_data)
+            result = deepcopy(self.snapshot_data)
+            measurement = result.setdefault('measurement', {})
+            age = (None if self.measurement_received is None
+                   else max(0.0, time.monotonic() - self.measurement_received))
+            measurement.update(receipt_age_s=age, stale=age is None or age > 3.0)
+            return result
 
     def submit(self, payload):
         command = validate_command(payload, self.origin)
@@ -328,6 +358,23 @@ class OperatorPanel(Node):
         with self.lock:
             if action in self.active_actions:
                 raise BusyError('Предыдущий запрос этой команды ещё выполняется')
+            if action in MEASUREMENT_ACTIONS:
+                if (MEASUREMENT_ACTIONS.intersection(self.active_actions)
+                        or 'save' in self.active_actions):
+                    raise BusyError('Предыдущий запрос замера ещё выполняется')
+                measurement = self.snapshot_data.get('measurement', {})
+                if (measurement.get('stale', True) or self.measurement_received is None
+                        or time.monotonic() - self.measurement_received > 3.0):
+                    raise BusyError('Нет свежего состояния регистратора метрик')
+                if measurement.get('export_busy', False):
+                    raise BusyError('Регистратор ещё рассчитывает предыдущий отчёт')
+                phase = measurement.get('phase')
+                if action == 'measurement_start' and phase not in ('idle', 'completed', 'failed', 'cancelled'):
+                    raise BusyError('Предыдущий замер ещё не завершён')
+                if action == 'measurement_stop' and phase != 'measuring':
+                    raise BusyError('Нет активного замера для завершения')
+                if action == 'measurement_retry' and not (phase == 'failed' and measurement.get('can_retry') is True):
+                    raise BusyError('Нет сохранённого интервала для повторного расчёта')
             self.next_job += 1
             job_id = self.next_job
             job = {'id': job_id, 'action': action, 'state': 'queued',
@@ -386,6 +433,10 @@ class OperatorPanel(Node):
                     message = result.message
                     if action == 'mission' and result.success:
                         message = 'Цель принята. Завершение полёта смотрите в состоянии миссии. ' + message
+                    elif action == 'measurement_start' and result.success:
+                        message = 'Начало замера принято. Состояние и время показаны в разделе измерений. ' + message
+                    elif action in ('measurement_stop', 'measurement_retry') and result.success:
+                        message = 'Завершение замера принято. Дождитесь состояния «Отчёт готов». ' + message
                     self.finish_job(job_id, 'succeeded' if result.success else 'failed', message)
                 except Exception as error:
                     self.finish_job(job_id, 'failed', str(error))
@@ -412,10 +463,16 @@ class OperatorPanel(Node):
                     item[kind] = sample
             vehicles.append(item)
         targets = {str(i): data['position'] for i, data in self.targets.items() if now - data['received'] <= 1.0}
+        measurement = dict(self.measurement)
+        measurement['receipt_age_s'] = (None if self.measurement_received is None
+                                         else max(0.0, now - self.measurement_received))
+        measurement['stale'] = (self.measurement_received is None
+                                  or now - self.measurement_received > 3.0)
         with self.lock:
             self.snapshot_data = finite_json({
                 'vehicles': vehicles, 'stations': self.stations, 'targets': targets,
                 'path': self.path, 'mission': self.mission, 'network': self.network,
+                'measurement': measurement,
                 'jobs': list(sorted(self.jobs.values(), key=lambda j: j['id'], reverse=True))[:12],
                 'sim_time_s': sim, 'origin_alt_amsl_m': self.origin, 'frame_id': self.frame,
             })

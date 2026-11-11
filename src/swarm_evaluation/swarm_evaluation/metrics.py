@@ -24,6 +24,33 @@ def clean(value):
     return None if isinstance(value, float) and not math.isfinite(value) else value
 
 
+def measurement_window(value):
+    """Validate a single clock epoch; bounds apply to source timestamps."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError('Measurement window must be an object')
+    segment = value.get('segment')
+    start, end = value.get('start_sim_s'), value.get('end_sim_s')
+    if (not isinstance(segment, int) or isinstance(segment, bool) or segment < 0
+            or not finite(start) or not finite(end) or not 0 <= start < end):
+        raise ValueError('Window requires segment >= 0 and finite 0 <= start_sim_s < end_sim_s')
+    return {'segment': segment, 'start_sim_s': float(start), 'end_sim_s': float(end),
+            'duration_sim_s': float(end-start)}
+
+
+def window_clause(window):
+    if window is None:
+        return '', []
+    return ' AND segment=? AND t>=? AND t<=?', [
+        window['segment'], window['start_sim_s'], window['end_sim_s']]
+
+
+def in_window(segment, stamp, window):
+    return window is None or (segment == window['segment']
+                             and window['start_sim_s'] <= stamp <= window['end_sim_s'])
+
+
 def position(row):
     p = tuple(row.get(k) for k in ('x', 'y', 'z'))
     return p if all(finite(v) for v in p) else None
@@ -87,12 +114,15 @@ def create_database(journal, database, max_bytes=None):
     return connection, count, rejected
 
 
-def rows(db, kind, vehicle=None):
+def rows(db, kind, vehicle=None, window=None):
     query = 'SELECT payload FROM obs WHERE kind=?'
     args = [kind]
     if vehicle is not None:
         query += ' AND vehicle=?'
         args.append(vehicle)
+    clause, bounds = window_clause(window)
+    query += clause
+    args += bounds
     for (payload,) in db.execute(query+' ORDER BY segment,t,id', args):
         yield json.loads(payload)
 
@@ -146,11 +176,13 @@ def summary(db, kind, identity):
             'rmse':math.sqrt(squares/n) if n else None, 'p95':p95}
 
 
-def observed_rate(db, kind, vehicle):
+def observed_rate(db, kind, vehicle, window=None):
     count = 0
     duration = 0.0
+    clause, bounds = window_clause(window)
     for n, first, last in db.execute('''SELECT COUNT(DISTINCT t),MIN(t),MAX(t)
-        FROM obs WHERE kind=? AND vehicle=? GROUP BY segment''', (kind,vehicle)):
+        FROM obs WHERE kind=? AND vehicle=?''' + clause + ' GROUP BY segment',
+        [kind, vehicle] + bounds):
         if n > 1 and last > first:
             count += n-1
             duration += last-first
@@ -175,21 +207,46 @@ def goal_fields(status):
     return data, goal, altitude
 
 
-def export_report(run_directory, output_directory=None, max_bytes=None, plots=False):
+def export_report(run_directory, output_directory=None, max_bytes=None, plots=False, window=None):
+    window = measurement_window(window)
     run = Path(run_directory)
-    output = Path(output_directory) if output_directory else run/'evaluation'
+    journal = run/'observations.jsonl'
+    available_bytes = journal.stat().st_size
+    if max_bytes is None:
+        max_bytes = available_bytes
+    if (not isinstance(max_bytes,int) or isinstance(max_bytes,bool)
+            or not 0 <= max_bytes <= available_bytes):
+        raise ValueError('Captured journal prefix is invalid or no longer available')
+    if output_directory is not None:
+        output = Path(output_directory)
+    elif window is None:
+        output = run/'evaluation'
+    else:
+        output = run/'evaluation_windows'/(
+            f"{window['segment']}_{window['start_sim_s']:.12g}_{window['end_sim_s']:.12g}")
     output.mkdir(parents=True,exist_ok=True)
     metadata = json.loads((run/'metadata.json').read_text())
-    db, count, rejected = create_database(run/'observations.jsonl',output/'metrics.sqlite',max_bytes)
+    db, count, rejected = create_database(journal,output/'metrics.sqlite',max_bytes)
     ids = list(metadata['vehicle_ids'])
     leader = metadata.get('leader_id',ids[0])
     gap = float(metadata.get('truth_max_gap_s',0.25))
     danger = float(metadata.get('danger_distance_m',20.0))
     origin = float(metadata.get('origin_alt_amsl_m',0.0))
     external = int(metadata.get('external_nav_state',23))
-    report = {'schema_version':1,'provenance':'recorded_ros_topics','observations':count,
+    clause, bounds = window_clause(window)
+    selected_count = db.execute('SELECT COUNT(*) FROM obs WHERE 1=1' + clause, bounds).fetchone()[0]
+    coverage = {}
+    for kind, vehicle, n, first, last in db.execute('''
+            SELECT kind,vehicle,COUNT(*),MIN(t),MAX(t) FROM obs WHERE 1=1'''
+            + clause + ' GROUP BY kind,vehicle', bounds):
+        coverage.setdefault(kind, {})[str(vehicle)] = {
+            'count': n, 'first_sim_s': first, 'last_sim_s': last}
+    report = {'schema_version':1,'provenance':'recorded_ros_topics','observations':selected_count,
+              'context_observations':count, 'journal_prefix_bytes':max_bytes,
+              'measurement_window':window, 'coverage':coverage,
               'malformed_records':rejected,'metadata':metadata,'vehicles':{},'pairs':{},'missions':{},
               'definitions':{
+                  'window':'Inclusive source-time bounds in one clock segment. Earlier/later rows in the captured journal prefix are context only. Malformed-record count covers the captured prefix.',
                   'truth_alignment':'Linear interpolation between bracketing GT samples; no extrapolation; same clock segment.',
                   'formation':'Actual GT relative offset minus target relative to time-aligned leader mesh; only confirmed External samples.',
                   'airborne_pair':'Both fresh armed states and GT ENU z above airborne_min_height_m; no landed field exists in VehicleState.',
@@ -199,7 +256,7 @@ def export_report(run_directory, output_directory=None, max_bytes=None, plots=Fa
               }}
     for i in ids:
         unmatched = invalid = 0
-        for row in rows(db,'estimate',i):
+        for row in rows(db,'estimate',i,window):
             segment,stamp = row.get('segment',0),row['t']
             age = row.get('measurement_age_s')
             if finite(age) and age >= 0:
@@ -219,7 +276,7 @@ def export_report(run_directory, output_directory=None, max_bytes=None, plots=Fa
             add(db,'localization_horizontal_m',i,segment,stamp,math.hypot(p[0]-actual[0],p[1]-actual[1]))
             add(db,'localization_vertical_m',i,segment,stamp,abs(p[2]-actual[2]))
         missing_targets = 0
-        for row in rows(db,'target',i):
+        for row in rows(db,'target',i,window):
             segment,stamp = row.get('segment',0),row['t']
             if not active_state(db,i,segment,stamp,external) or position(row) is None:
                 continue
@@ -239,12 +296,12 @@ def export_report(run_directory, output_directory=None, max_bytes=None, plots=Fa
                 'localization_vertical_m','formation_relative_m','target_tracking_m',
                 'measurement_age_s','estimate_delivery_delay_s')}
         report['vehicles'][str(i)].update({'unmatched_truth':unmatched,'invalid_estimates':invalid,
-            'unmatched_targets':missing_targets,'position_update_rate_hz':observed_rate(db,'estimate',i)})
+            'unmatched_targets':missing_targets,'position_update_rate_hz':observed_rate(db,'estimate',i,window)})
     for first,second in itertools.combinations(ids,2):
         pair = f'{first}-{second}'
         episodes = all_episodes = 0
         previous = previous_air = None
-        for row in rows(db,'truth',first):
+        for row in rows(db,'truth',first,window):
             segment,stamp = row.get('segment',0),row['t']
             a = position(row)
             b = interpolate(db,'truth',second,segment,stamp,gap)
@@ -273,8 +330,13 @@ def export_report(run_directory, output_directory=None, max_bytes=None, plots=Fa
             'danger_threshold_m':danger,
             'all_observed_close_episodes':all_episodes if summary(db,'separation_all_m',pair)['count'] else None,
             'airborne_observed_close_episodes':episodes if summary(db,'separation_airborne_m',pair)['count'] else None,
-            'episode_scope':'A gap over truth_max_gap_s ends observation continuity; a later close sample starts a new observed episode.'}
-    for row in rows(db,'mission'):
+            'episode_scope':'Observation starts at the selected window boundary. A gap over truth_max_gap_s ends continuity; a later close sample starts a new observed episode.'}
+    mission_context = []
+    if window is not None:
+        previous = latest(db,'mission',0,window['segment'],window['start_sim_s'])
+        if previous is not None:
+            mission_context.append(previous)
+    for row in itertools.chain(mission_context, rows(db,'mission',window=window)):
         data,goal,altitude = goal_fields(row)
         identity = str(row.get('segment',0))+':'+str(data.get('mission_id','unknown'))
         mission = report['missions'].setdefault(identity,{'first_observed_sim_s':row['t'],
@@ -283,32 +345,45 @@ def export_report(run_directory, output_directory=None, max_bytes=None, plots=Fa
         mission['last_phase'] = data.get('phase')
         if data.get('reached') and mission['reported_time_to_goal_s'] is None:
             reached = data.get('reached_sim_s')
-            mission['reported_time_to_goal_s'] = (reached-mission['start_sim_s']
-                if finite(reached) else data.get('elapsed_s'))
+            if window is None or (finite(reached) and in_window(row.get('segment',0),reached,window)):
+                mission['reported_time_to_goal_s'] = (reached-mission['start_sim_s']
+                    if finite(reached) and finite(mission['start_sim_s']) else data.get('elapsed_s'))
+    first_gt_reach = {}
+    # Earlier truth remains context for determining whether the *first* goal
+    # encounter occurred before the window. It never adds geometric error samples.
     for row in rows(db,'truth',leader):
         segment,stamp = row.get('segment',0),row['t']
+        if window is not None and (segment != window['segment'] or stamp > window['end_sim_s']):
+            continue
         actual = position(row)
         status = latest(db,'mission',0,segment,stamp,2.0)
         data,goal,altitude = goal_fields(status)
         if actual is None or data.get('phase') != 'cruise':
             continue
         identity = str(segment)+':'+str(data.get('mission_id','unknown'))
-        route = latest(db,'route',0,segment,stamp)
-        points = route.get('points',[]) if route else []
-        add(db,'cross_track_m',identity,segment,stamp,cross_track(actual,points))
-        if finite(altitude):
-            add(db,'route_altitude_error_m',identity,segment,stamp,abs(origin+actual[2]-altitude))
+        if in_window(segment,stamp,window):
+            route = latest(db,'route',0,segment,stamp)
+            points = route.get('points',[]) if route else []
+            add(db,'cross_track_m',identity,segment,stamp,cross_track(actual,points))
+            if finite(altitude):
+                add(db,'route_altitude_error_m',identity,segment,stamp,abs(origin+actual[2]-altitude))
         mission = report['missions'].get(identity)
         radius = data.get('arrival_radius_m',metadata.get('goal_radius_m',30.0))
-        if (mission and mission['gt_time_to_goal_s'] is None and isinstance(goal,list)
+        if (mission and identity not in first_gt_reach and isinstance(goal,list)
                 and len(goal)>=2 and all(finite(v) for v in goal[:2]) and finite(altitude)
                 and math.hypot(actual[0]-goal[0],actual[1]-goal[1]) <= radius
                 and abs(origin+actual[2]-altitude) <= metadata.get('goal_height_tolerance_m',10.0)):
-            mission['gt_time_to_goal_s'] = stamp-mission['start_sim_s']
+            first_gt_reach[identity] = stamp
+            if in_window(segment,stamp,window) and finite(mission['start_sim_s']):
+                mission['gt_time_to_goal_s'] = stamp-mission['start_sim_s']
     for identity,mission in report['missions'].items():
         mission['cross_track_m'] = summary(db,'cross_track_m',identity)
         mission['altitude_error_m'] = summary(db,'route_altitude_error_m',identity)
-    report['links'] = link_metrics(db)
+    report['links'] = link_metrics(db,window)
+    report['definitions']['mission_time'] = (
+        'Time from mission start, not measurement start; only a goal event occurring '
+        'inside the selected interval is timed. GT uses its first observed goal encounter '
+        'during cruise, including earlier journal context. No observation is not proof of absence.')
     db.commit()
     kinds = [r[0] for r in db.execute('SELECT DISTINCT kind FROM metric')]
     for kind in kinds:
@@ -317,42 +392,80 @@ def export_report(run_directory, output_directory=None, max_bytes=None, plots=Fa
             writer.writerow(('identity','segment','sim_time_s','value'))
             writer.writerows(db.execute('SELECT identity,segment,t,value FROM metric WHERE kind=? ORDER BY identity,segment,t',(kind,)))
     (output/'metrics.json').write_text(json.dumps(clean(report),indent=2,allow_nan=False)+'\n')
+    if window is not None:
+        (output/'window.json').write_text(json.dumps(
+            {**window, 'max_bytes': max_bytes},indent=2,allow_nan=False)+'\n')
     if plots:
         plot_metrics(db,output)
     db.close()
     return clean(report)
 
 
-def link_metrics(db):
-    result = {'ranging_counter_sessions':{},'network_counter_sessions':{},'ranging_observed_windows':{}}
-    for kind,key in (('ranging_stats','ranging_counter_sessions'),('network_stats','network_counter_sessions')):
-        previous = {}
-        session = {}
-        for row in rows(db,kind):
-            data = row.get('data',{})
-            links = data.get('links',[])
-            if not isinstance(links,list):
+def counter_metrics(db, kind, window):
+    """Difference only observed snapshots; never assign old cumulative losses to a window."""
+    previous, sessions, endpoints = {}, {}, {}
+    counters = ('generated', 'dropped', 'delivered')
+    for row in rows(db,kind,window=window):
+        data = row.get('data',{})
+        links = data.get('links',[])
+        if not isinstance(links,list):
+            continue
+        for link in links:
+            if not isinstance(link,dict):
                 continue
-            for link in links:
-                if not isinstance(link,dict):
-                    continue
-                identity = f"{link.get('vehicle_id')}:{link.get('station_id',link.get('kind','unknown'))}"
-                base = (row.get('segment',0),data.get('epoch',0),identity)
-                generated,dropped,delivered = (link.get(k) for k in ('generated','dropped','delivered'))
-                if not all(isinstance(v,int) and v>=0 for v in (generated,dropped,delivered)):
-                    continue
-                if generated < previous.get(base,-1):
-                    session[base] = session.get(base,0)+1
-                previous[base] = generated
-                name = ':'.join(map(str,base))+f":session{session.get(base,0)}"
-                delay_sum,delay_n = link.get('delay_sum_s'),link.get('delay_count')
-                result[key][name] = {'generated':generated,'dropped':dropped,'delivered':delivered,
-                    'pending':link.get('pending'),'loss_fraction':dropped/generated if generated else None,
-                    'mean_delivery_delay_s':delay_sum/delay_n if finite(delay_sum) and finite(delay_n) and delay_n>0 else None,
-                    'scope':'Simulator cumulative counters in one counter epoch/session; pending is not a loss'}
+            if not all(isinstance(link.get(k),int) and not isinstance(link[k],bool)
+                       and link[k] >= 0 for k in counters):
+                continue
+            identity = f"{link.get('vehicle_id')}:{link.get('station_id',link.get('kind','unknown'))}"
+            base = (row.get('segment',0),data.get('epoch',0),identity)
+            prior = previous.get(base)
+            monotonic = counters + ('delay_sum_s', 'delay_count')
+            if prior is not None and any(
+                    finite(link.get(k)) and finite(prior.get(k)) and link[k] < prior[k]
+                    for k in monotonic):
+                sessions[base] = sessions.get(base,0)+1
+            previous[base] = link
+            name = ':'.join(map(str,base))+f":session{sessions.get(base,0)}"
+            entry = endpoints.setdefault(name, {
+                'first':link, 'first_t':row['t'], 'count':0})
+            entry.update(last=link, last_t=row['t'], count=entry['count']+1)
+    result = {}
+    for name, entry in endpoints.items():
+        first, last = entry['first'], entry['last']
+        complete = window is None or (entry['count'] >= 2 and entry['last_t'] > entry['first_t'])
+        values = {key:(last[key] if window is None else last[key]-first[key])
+                  if complete else None for key in counters}
+        generated, dropped = values['generated'], values['dropped']
+        delay_sum, delay_n = last.get('delay_sum_s'), last.get('delay_count')
+        if window is not None:
+            delay_sum = delay_sum-first['delay_sum_s'] if (
+                complete and finite(delay_sum) and finite(first.get('delay_sum_s'))) else None
+            delay_n = delay_n-first['delay_count'] if (
+                complete and finite(delay_n) and finite(first.get('delay_count'))) else None
+        values.update(
+            pending=last.get('pending'),
+            loss_fraction=dropped/generated if generated else None,
+            mean_delivery_delay_s=delay_sum/delay_n if (
+                finite(delay_sum) and delay_sum >= 0 and finite(delay_n) and delay_n > 0) else None,
+            coverage={'first_snapshot_sim_s':entry['first_t'], 'last_snapshot_sim_s':entry['last_t'],
+                      'duration_sim_s':entry['last_t']-entry['first_t'],
+                      'snapshot_count':entry['count'], 'sufficient_snapshots':complete},
+            scope=('Simulator cumulative counters in one counter epoch/session; pending is not a loss'
+                   if window is None else
+                   'Counter differences between first and last snapshots INSIDE the measurement window. '
+                   'Window edges outside snapshot coverage are unknown. Pending is the last snapshot '
+                   'queue size, not a loss. Delivered packets may have been queued before the window.'))
+        result[name] = values
+    return result
+
+
+def link_metrics(db, window=None):
+    result = {'ranging_counter_sessions':counter_metrics(db,'ranging_stats',window),
+              'network_counter_sessions':counter_metrics(db,'network_stats',window),
+              'ranging_observed_windows':{}}
     # Every packet's sequence is incremented before loss simulation.
     aggregates = {}
-    for row in rows(db,'range'):
+    for row in rows(db,'range',window=window):
         sequence = row.get('sequence')
         if not isinstance(sequence,int) or sequence<0:
             continue
@@ -364,8 +477,10 @@ def link_metrics(db):
         a['min'],a['max'],a['received'] = min(a['min'],sequence),max(a['max'],sequence),a['received']+1
     for key,a in aggregates.items():
         # DISTINCT is evaluated on disk; duplicates do not hide missing sequences.
+        clause, bounds = window_clause(window)
         unique = db.execute('''SELECT COUNT(DISTINCT json_extract(payload,'$.sequence')) FROM obs
-            WHERE kind='range' AND segment=? AND vehicle=? AND json_extract(payload,'$.station_id')=?''',key).fetchone()[0]
+            WHERE kind='range' AND segment=? AND vehicle=? AND json_extract(payload,'$.station_id')=?'''
+            + clause,list(key)+bounds).fetchone()[0]
         span = a['max']-a['min']+1
         result['ranging_observed_windows'][':'.join(map(str,key))] = {
             'received':a['received'],'unique_received':unique,'duplicates':a['received']-unique,
@@ -403,8 +518,20 @@ def main():
     parser.add_argument('run_directory',type=Path)
     parser.add_argument('--output-directory',type=Path)
     parser.add_argument('--plots',action='store_true')
+    parser.add_argument('--window-file',type=Path,
+                        help='JSON with segment/start_sim_s/end_sim_s and optional frozen max_bytes')
     args = parser.parse_args()
-    report = export_report(args.run_directory,args.output_directory,plots=args.plots)
+    window = None
+    max_bytes = None
+    if args.window_file is not None:
+        window = json.loads(args.window_file.read_text())
+        measurement_window(window)
+        max_bytes = window.get('max_bytes')
+        if max_bytes is not None and (not isinstance(max_bytes,int)
+                or isinstance(max_bytes,bool) or max_bytes <= 0):
+            parser.error('window max_bytes must be a positive integer')
+    report = export_report(args.run_directory,args.output_directory,max_bytes=max_bytes,
+                           plots=args.plots,window=window)
     print(json.dumps({'observations':report['observations'],'vehicles':list(report['vehicles'])}))
 
 

@@ -6,6 +6,8 @@
 <style>
 :root{color-scheme:dark;--bg:#101821;--panel:#192532;--line:#344659;--text:#e9eff7;--muted:#a8b7c6;--blue:#66b7ff;--green:#6bd9a5;--red:#ff9691}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,sans-serif}header{display:flex;align-items:center;justify-content:space-between;padding:15px 22px;border-bottom:1px solid var(--line);gap:20px}h1{font-size:20px;margin:0}h2{font-size:16px;margin:0 0 12px}.sub,.muted{color:var(--muted);font-size:13px}main{display:grid;grid-template-columns:minmax(480px,1fr) 350px;gap:16px;padding:16px;max-width:1600px;margin:auto}.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:15px;margin-bottom:14px}.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}button,input,select{font:inherit;border-radius:6px;border:1px solid #4b6077;padding:8px 10px;color:var(--text);background:#243648}button{cursor:pointer}button:hover{background:#354e66}button.primary{background:#23659a}button.hold{background:#8c392e}button:disabled{opacity:.45;cursor:wait}label{display:block;color:var(--muted);font-size:13px;margin:10px 0 4px}input,select{width:100%}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.wide{width:100%;margin-top:12px}canvas{display:block;width:100%;height:540px;border:1px solid var(--line);border-radius:7px;touch-action:none;cursor:crosshair;background:#0e1b28}.mapnote{display:flex;justify-content:space-between;gap:10px;margin-top:8px;font-size:12px;color:var(--muted)}.aircraft{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:12px}.plane{border:1px solid var(--line);border-left:4px solid var(--blue);padding:10px;border-radius:6px}.plane .name{font-weight:650}.plane .details{white-space:pre-line;font-size:13px;color:var(--muted);margin-top:4px}.badge{font-size:13px;color:var(--green)}.error{color:var(--red)}.jobs{max-height:230px;overflow:auto;font-size:13px}.job{padding:8px 0;border-bottom:1px solid var(--line)}.job:last-child{border:0}.job-title{font-weight:600}.job-text{overflow-wrap:anywhere;color:var(--muted)}#message{min-height:22px;margin-top:8px;font-size:13px;overflow-wrap:anywhere}#mission-status{white-space:pre-line;overflow-wrap:anywhere}.hint{font-size:12px;color:var(--muted);margin-top:9px}footer{padding:0 16px 20px;text-align:center;color:var(--muted);font-size:12px}@media(max-width:950px){main{grid-template-columns:1fr}aside{display:grid;grid-template-columns:1fr 1fr;gap:12px}.card{margin-bottom:0}canvas{height:440px}}@media(max-width:600px){main{padding:10px;gap:12px}aside{display:block}aside .card{margin-bottom:12px}header{padding:12px}canvas{height:350px}.row3{grid-template-columns:1fr}h1{font-size:17px}}
+.measurement-status{white-space:pre-line;overflow-wrap:anywhere}.measurement-summary{font-size:12px;margin-top:10px}.measurement-summary .metric-group{border-top:1px solid var(--line);padding-top:8px;margin-top:8px;white-space:pre-line;overflow-wrap:anywhere}
+#map{cursor:grab;user-select:none}#map.dragging{cursor:grabbing}
 </style>
 </head>
 <body>
@@ -14,8 +16,9 @@
 <section>
 <div class="card">
 <div class="toolbar"><h2 style="margin:0;flex:1">Карта ENU</h2><button id="fit">Показать всё</button><button id="zoom-in" title="Приблизить">＋</button><button id="zoom-out" title="Отдалить">−</button></div>
-<canvas id="map" aria-label="Локальная карта: нажмите на точку для выбора цели миссии"></canvas>
+<canvas id="map" aria-label="Локальная карта: перетаскивайте для перемещения, щёлкните для выбора цели миссии"></canvas>
 <div class="mapnote"><span>↑ Север · → Восток · метры относительно общего начала координат</span><span id="cursor">Нажмите на карту для выбора цели</span></div>
+<div class="hint">Зажмите левую кнопку мыши и тяните карту · Щелчок — выбор цели · Колесо — масштаб</div>
 <div id="aircraft" class="aircraft"></div>
 </div>
 <div class="card"><h2>Последние запросы</h2><div id="jobs" class="jobs">Запросов ещё нет</div><div id="message" role="status"></div></div>
@@ -25,7 +28,16 @@
 <div class="card"><h2>Формация</h2><form id="formation-form"><div class="row"><div><label for="formation">Построение</label><select id="formation"><option value="line">Линия</option><option value="wedge">Клин</option></select></div><div><label for="spacing">Интервал, м</label><input id="spacing" type="number" value="60" min="45" max="120" step="5" required></div></div><button class="wide" data-action="formation">Изменить строй</button></form></div>
 <div class="card"><h2>Команда лидеру</h2><form id="manual-form"><div class="row3"><div><label for="course">Курс, °</label><input id="course" type="number" value="90" min="0" max="360" step="5" required></div><div><label for="altitude">Высота AMSL, м</label><input id="altitude" type="number" value="70" min="20" max="250" step="5" required></div><div><label for="speed">EAS, м/с</label><input id="speed" type="number" value="15" min="10" max="19" step="0.5" required></div></div><button class="wide" data-action="manual">Задать лидеру</button></form><div class="hint">0° — север, 90° — восток. Курс, высота и скорость меняются плавно. При активной миссии сначала отмените её.</div></div>
 <div class="card"><h2>Автоматическая миссия</h2><form id="mission-form"><div class="row"><div><label for="east">Восток, м</label><input id="east" type="number" value="600" min="-10000" max="10000" step="1" required></div><div><label for="north">Север, м</label><input id="north" type="number" value="500" min="-10000" max="10000" step="1" required></div></div><label for="radius">Радиус достижения цели, м</label><input id="radius" type="number" value="40" min="10" max="100" step="5" required><button class="primary wide" data-action="mission">Начать миссию к выбранной точке</button></form><button class="wide" data-action="cancel">Отменить миссию и перейти в Hold</button><div id="mission-status" class="hint">Миссия не запущена</div><div class="hint">Выбор цели доступен щелчком по карте. Высота и маршрут выбираются автоматически. Завершение — круг ожидания.</div></div>
-<div class="card"><h2>Измерения</h2><button class="wide" data-action="save">Сохранить метрики</button><div id="network-status" class="hint">Ожидание статистики связи</div></div>
+<div class="card"><h2>Замер метрик</h2>
+<div class="hint">Когда строй сформирован, начните замер. Завершите его через нужный интервал: отчёт будет рассчитан только по этому участку. Полный журнал полёта сохраняется отдельно.</div>
+<button class="primary wide" data-action="measurement_start" disabled>Начать замер</button>
+<button class="wide" data-action="measurement_stop" disabled>Завершить и сохранить</button>
+<button class="wide" data-action="measurement_retry" hidden disabled>Повторить расчёт</button>
+<div id="measurement-status" class="hint measurement-status" role="status">Ожидание регистратора метрик</div>
+<div id="measurement-summary" class="measurement-summary"></div>
+<button class="wide" data-action="save">Сохранить весь полёт</button>
+<div class="hint">Маршрутные метрики появятся, если в интервал попал полёт по миссии. Для проверки взлёта, перестроений и всех сближений используйте отчёт всего полёта.</div>
+<div id="network-status" class="hint">Ожидание статистики связи</div></div>
 </aside>
 </main>
 <footer>Карта показывает mesh-оценку положения. Ground truth используется только отдельным модулем оценки.</footer>
@@ -36,7 +48,7 @@ const $=id=>document.getElementById(id);
 const colors=['#66b7ff','#6bd9a5','#ffd27b','#df9cff','#ff9691'];
 const canvas=$('map'),ctx=canvas.getContext('2d');
 let snapshot={vehicles:[],stations:[],path:[],targets:{},mission:{}},selectedGoal=[600,500],camera={east:250,north:220,span:1000},originInitialized=false,pollBusy=false;
-const actionNames={takeoff:'Взлёт группы',activate:'Включение строя',hold:'Hold',formation:'Формация',manual:'Команда лидеру',mission:'Миссия',cancel:'Отмена миссии',save:'Сохранение метрик'};
+const actionNames={takeoff:'Взлёт группы',activate:'Включение строя',hold:'Hold',formation:'Формация',manual:'Команда лидеру',mission:'Миссия',cancel:'Отмена миссии',save:'Отчёт всего полёта',measurement_start:'Начало замера',measurement_stop:'Завершение замера',measurement_retry:'Повтор расчёта'};
 const phaseNames={waiting:'Ожидание',idle:'Ожидание',planning:'Планирование',takeoff:'Последовательный взлёт',activate:'Включение Swarm Control',activating:'Включение Swarm Control',assembling:'Сбор группы',cruise:'Полёт по маршруту',flying:'Полёт по маршруту',completed:'Миссия завершена',failed:'Ошибка миссии',cancelled:'Миссия отменена',holding:'Переход в Hold'};
 const jobNames={queued:'в очереди',waiting_service:'ожидание сервиса',running:'ожидание ответа',succeeded:'успешный ответ',failed:'отказ',timed_out:'результат неизвестен'};
 function dimensions(){return {width:canvas.clientWidth,height:canvas.clientHeight};}
@@ -44,20 +56,118 @@ function worldToScreen(e,n,width,height,view=camera){const scale=Math.min(width,
 function screenToWorld(x,y,width,height,view=camera){const scale=Math.min(width,height)/view.span;return [view.east+(x-width/2)/scale,view.north-(y-height/2)/scale];}
 window.SwarmMap={worldToScreen,screenToWorld};
 function fmt(value,decimals=1){return typeof value==='number'&&Number.isFinite(value)?value.toFixed(decimals):'—';}
+function measurementView(measurement={},pending=new Set()){
+    const phase=measurement.phase||'waiting';
+    const stale=measurement.stale!==false;
+    const busy=['measurement_start','measurement_stop','measurement_retry','save'].some(action=>pending.has(action));
+    const exporting=measurement.export_busy===true||phase==='exporting';
+    const available=!stale&&!busy&&!exporting;
+    return {phase,stale,
+        canStart:available&&['idle','completed','failed','cancelled'].includes(phase),
+        canStop:available&&phase==='measuring',
+        canRetry:available&&phase==='failed'&&measurement.can_retry===true,
+        showRetry:phase==='failed'&&measurement.can_retry===true,
+        canSave:!busy&&!exporting};
+}
+window.SwarmMeasurements={measurementView};
+function updateMeasurement(pending){
+    const measurement=snapshot.measurement||{},view=measurementView(measurement,pending);
+    const phases={waiting:'Ожидание регистратора',idle:'Готов к замеру',measuring:'Идёт замер',exporting:'Расчёт отчёта…',completed:'Отчёт готов',failed:'Ошибка расчёта',cancelled:'Замер отменён'};
+    const lines=[phases[view.phase]||'Состояние неизвестно'];
+    if(measurement.measurement_id)lines.push(`Замер №${measurement.measurement_id}`);
+    if(typeof measurement.duration_sim_s==='number')lines.push(`Длительность: ${fmt(measurement.duration_sim_s,1)} с симуляции`);
+    if(typeof measurement.start_sim_s==='number')lines.push(`Начало: ${fmt(measurement.start_sim_s,2)} с${typeof measurement.end_sim_s==='number'?` · конец: ${fmt(measurement.end_sim_s,2)} с`:''}`);
+    if(measurement.detail)lines.push(String(measurement.detail));
+    if(measurement.report_path)lines.push(`Файл отчёта: ${measurement.report_path}`);
+    if(view.stale)lines.unshift('Нет свежего состояния регистратора. Дождитесь связи.');
+    const status=$('measurement-status');
+    status.className='hint measurement-status'+(view.stale||view.phase==='failed'?' error':'');
+    status.textContent=lines.join('\n');
+    for(const [action,enabled]of [['measurement_start',view.canStart],['measurement_stop',view.canStop],['measurement_retry',view.canRetry],['save',view.canSave]]){
+        const button=document.querySelector(`[data-action="${action}"]`);button.disabled=!enabled;
+        if(action==='measurement_retry')button.hidden=!view.showRetry;
+    }
+    const box=$('measurement-summary');box.replaceChildren();
+    const summary=measurement.summary;
+    if(!summary||typeof summary!=='object')return;
+    const group=text=>{const div=document.createElement('div');div.className='metric-group';div.textContent=text;box.append(div);};
+    for(const [id,v]of Object.entries(summary.vehicles||{})){
+        if(!v||typeof v!=='object')continue;
+        group(`plane_${id}\nПозиция RMSE / P95: ${fmt(v.localization_rmse_m,2)} / ${fmt(v.localization_p95_m,2)} м (n=${fmt(v.localization_count,0)})\nСтрой средняя / максимальная: ${fmt(v.formation_mean_m,2)} / ${fmt(v.formation_max_m,2)} м (n=${fmt(v.formation_count,0)})\nОбновления: ${fmt(v.update_rate_hz,1)} Гц · невалидных оценок: ${fmt(v.invalid_estimates,0)}`);
+    }
+    group(`Дистанция в полёте, минимум: ${fmt(summary.min_separation_m,2)} м\nНаблюдаемых опасных сближений: ${fmt(summary.close_episodes,0)}`);
+    for(const [id,m]of Object.entries(summary.missions||{})){
+        if(!m||typeof m!=='object')continue;
+        group(`Миссия ${id}: ${phaseNames[m.phase]||m.phase||'—'}\nRMSE отклонения от маршрута / высоты: ${fmt(m.cross_track_rmse_m,2)} / ${fmt(m.altitude_rmse_m,2)} м\nВремя до цели от старта миссии: ${fmt(m.time_to_goal_s,1)} с`);
+    }
+    for(const [key,label]of [['rtt','RTT'],['peer','Обмен бортов']]){
+        const link=summary.links?.[key];if(!link||typeof link!=='object')continue;
+        group(`${label}: потери ${fmt(typeof link.loss_fraction==='number'?link.loss_fraction*100:null,2)}% · средняя задержка ${fmt(link.mean_delivery_delay_s,3)} с`);
+    }
+    group('«—» означает отсутствие данных, а не нулевую ошибку. Полные метрики и границы покрытия — в файле отчёта.');
+}
 function mode(s){if(!s)return 'нет статуса';const names={4:'Hold',5:'RTL',17:'Takeoff',18:'Land',23:'Swarm / External 1'};return names[s.nav_state]||`Режим ${s.nav_state}`;}
 function mapPoint(p){return Array.isArray(p)&&p.length>=2&&Number.isFinite(p[0])&&Number.isFinite(p[1]);}
 function draw(){const {width,height}=dimensions();if(!width||!height)return;const dpr=window.devicePixelRatio||1;if(canvas.width!==Math.round(width*dpr)||canvas.height!==Math.round(height*dpr)){canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);}ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);const project=(e,n)=>worldToScreen(e,n,width,height);const p0=screenToWorld(0,height,width,height),p1=screenToWorld(width,0,width,height);const raw=camera.span/8,pow=Math.pow(10,Math.floor(Math.log10(raw))),step=[1,2,5,10].map(x=>x*pow).find(x=>x>=raw);ctx.font='11px system-ui';ctx.lineWidth=1;for(let e=Math.ceil(p0[0]/step)*step;e<=p1[0];e+=step){const [x]=project(e,0);ctx.strokeStyle='#243648';ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,height);ctx.stroke();ctx.fillStyle='#8297ab';ctx.fillText(`${Math.round(e)} E`,x+3,height-6);}for(let n=Math.ceil(p0[1]/step)*step;n<=p1[1];n+=step){const [,y]=project(0,n);ctx.strokeStyle='#243648';ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(width,y);ctx.stroke();ctx.fillStyle='#8297ab';ctx.fillText(`${Math.round(n)} N`,4,y-4);}if(snapshot.path?.length){ctx.strokeStyle='#ddb970';ctx.lineWidth=2;ctx.beginPath();let first=true;for(const p of snapshot.path){if(!mapPoint(p))continue;const [x,y]=project(...p);if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);}ctx.stroke();}for(const station of snapshot.stations||[]){if(!mapPoint(station.position))continue;const [x,y]=project(...station.position);ctx.fillStyle='#c3d0db';ctx.beginPath();ctx.moveTo(x,y-8);ctx.lineTo(x+7,y+6);ctx.lineTo(x-7,y+6);ctx.closePath();ctx.fill();ctx.fillText(`Станция ${station.id}`,x+10,y+3);}for(const [id,p] of Object.entries(snapshot.targets||{})){if(!mapPoint(p))continue;const [x,y]=project(...p);ctx.strokeStyle=colors[(Number(id)-1)%colors.length];ctx.lineWidth=1.5;ctx.strokeRect(x-5,y-5,10,10);}if(mapPoint(selectedGoal)){const [x,y]=project(...selectedGoal);ctx.strokeStyle='#ffd27b';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,9,0,2*Math.PI);ctx.moveTo(x-14,y);ctx.lineTo(x+14,y);ctx.moveTo(x,y-14);ctx.lineTo(x,y+14);ctx.stroke();ctx.fillStyle='#ffd27b';ctx.fillText('Цель',x+13,y-10);}for(const [index,plane] of (snapshot.vehicles||[]).entries()){const mesh=plane.mesh;if(!mesh||!mapPoint(mesh.position))continue;const [x,y]=project(...mesh.position),v=mesh.velocity||[0,0];const heading=Math.atan2(v[0]||0,v[1]||0);const color=colors[index%colors.length];ctx.save();ctx.translate(x,y);ctx.rotate(heading);ctx.fillStyle=mesh.stale||mesh.mesh_status===0?'#6a7887':color;ctx.beginPath();ctx.moveTo(0,-12);ctx.lineTo(8,9);ctx.lineTo(0,5);ctx.lineTo(-8,9);ctx.closePath();ctx.fill();ctx.restore();ctx.fillStyle=color;ctx.fillText(`plane_${plane.id}`,x+12,y-3);}ctx.fillStyle='#b8c8d7';ctx.fillText('N ↑',width-35,20);}
 function fit(){let points=[...(snapshot.stations||[]).map(s=>s.position),...(snapshot.vehicles||[]).map(v=>v.mesh?.position),...(snapshot.path||[]),selectedGoal].filter(mapPoint);if(!points.length)return;let es=points.map(p=>p[0]),ns=points.map(p=>p[1]);camera.east=(Math.min(...es)+Math.max(...es))/2;camera.north=(Math.min(...ns)+Math.max(...ns))/2;camera.span=Math.max(200,Math.max(...es)-Math.min(...es),Math.max(...ns)-Math.min(...ns))*1.25;draw();}
-function update(){draw();const list=$('aircraft');list.replaceChildren();for(const [index,plane]of(snapshot.vehicles||[]).entries()){const card=document.createElement('div');card.className='plane';card.style.borderLeftColor=colors[index%colors.length];const name=document.createElement('div');name.className='name';name.textContent=`plane_${plane.id}${index===0?' · лидер':''}`;const info=document.createElement('div');info.className='details';const s=plane.state,m=plane.mesh;let warning=s?.failsafe?' · FAILSAFE':s?.stale||m?.stale?' · данные устарели':'';info.textContent=`${mode(s)} · ${s?.armed?'ARMED':'DISARMED'}${warning}\nВысота AMSL: ${fmt(s?.altitude_amsl_m)} м\nСкорость над землёй: ${m?fmt(Math.hypot(m.velocity?.[0]||0,m.velocity?.[1]||0)):'—'} м/с\nКачество mesh: ${m?fmt(100*m.quality,0):'—'}%`;card.append(name,info);list.append(card);}const mission=snapshot.mission||{};$('mission-status').textContent=`Состояние: ${phaseNames[mission.phase]||mission.phase||'ожидание'}${(mission.detail||mission.message)?'\n'+(mission.detail||mission.message):''}`;const jobs=$('jobs');jobs.replaceChildren();for(const job of snapshot.jobs||[]){const div=document.createElement('div');div.className='job';const title=document.createElement('div');title.className='job-title'+(['failed','timed_out'].includes(job.state)?' error':'');title.textContent=`#${job.id} ${actionNames[job.action]||job.action}: ${jobNames[job.state]||job.state}`;const text=document.createElement('div');text.className='job-text';text.textContent=job.message;div.append(title,text);jobs.append(div);}if(!(snapshot.jobs||[]).length)jobs.textContent='Запросов ещё нет';const pending=new Set((snapshot.jobs||[]).filter(j=>['queued','waiting_service','running'].includes(j.state)).map(j=>j.action));document.querySelectorAll('[data-action]').forEach(b=>b.disabled=pending.has(b.dataset.action));const net=snapshot.network||{};$('network-status').textContent=Object.keys(net).length?'Статистика mesh поступает. Подробные задержки и потери сохраняются в метриках.':'Ожидание статистики связи';if(!originInitialized&&Number.isFinite(snapshot.origin_alt_amsl_m)){const origin=snapshot.origin_alt_amsl_m;$('altitude').min=origin+20;$('altitude').max=origin+250;$('altitude').value=origin+70;originInitialized=true;}}
+function update(){draw();const list=$('aircraft');list.replaceChildren();for(const [index,plane]of(snapshot.vehicles||[]).entries()){const card=document.createElement('div');card.className='plane';card.style.borderLeftColor=colors[index%colors.length];const name=document.createElement('div');name.className='name';name.textContent=`plane_${plane.id}${index===0?' · лидер':''}`;const info=document.createElement('div');info.className='details';const s=plane.state,m=plane.mesh;let warning=s?.failsafe?' · FAILSAFE':s?.stale||m?.stale?' · данные устарели':'';info.textContent=`${mode(s)} · ${s?.armed?'ARMED':'DISARMED'}${warning}\nВысота AMSL: ${fmt(s?.altitude_amsl_m)} м\nСкорость над землёй: ${m?fmt(Math.hypot(m.velocity?.[0]||0,m.velocity?.[1]||0)):'—'} м/с\nКачество mesh: ${m?fmt(100*m.quality,0):'—'}%`;card.append(name,info);list.append(card);}const mission=snapshot.mission||{};$('mission-status').textContent=`Состояние: ${phaseNames[mission.phase]||mission.phase||'ожидание'}${(mission.detail||mission.message)?'\n'+(mission.detail||mission.message):''}`;const jobs=$('jobs');jobs.replaceChildren();for(const job of snapshot.jobs||[]){const div=document.createElement('div');div.className='job';const title=document.createElement('div');title.className='job-title'+(['failed','timed_out'].includes(job.state)?' error':'');title.textContent=`#${job.id} ${actionNames[job.action]||job.action}: ${jobNames[job.state]||job.state}`;const text=document.createElement('div');text.className='job-text';text.textContent=job.message;div.append(title,text);jobs.append(div);}if(!(snapshot.jobs||[]).length)jobs.textContent='Запросов ещё нет';const pending=new Set((snapshot.jobs||[]).filter(j=>['queued','waiting_service','running'].includes(j.state)).map(j=>j.action));document.querySelectorAll('[data-action]').forEach(b=>b.disabled=pending.has(b.dataset.action));updateMeasurement(pending);const net=snapshot.network||{};$('network-status').textContent=Object.keys(net).length?'Статистика mesh поступает. Подробные задержки и потери сохраняются в метриках.':'Ожидание статистики связи';if(!originInitialized&&Number.isFinite(snapshot.origin_alt_amsl_m)){const origin=snapshot.origin_alt_amsl_m;$('altitude').min=origin+20;$('altitude').max=origin+250;$('altitude').value=origin+70;originInitialized=true;}}
 async function send(payload){try{$('message').className='';const response=await fetch('/api/command',{method:'POST',headers:{'Content-Type':'application/json','X-Panel-Token':TOKEN},body:JSON.stringify(payload)});const data=await response.json();if(!response.ok)throw new Error(data.error||response.statusText);$('message').textContent=`Запрос #${data.job_id} принят в очередь. Ожидайте ответа сервиса.`;poll();}catch(error){$('message').className='error';$('message').textContent=error.message;}}
 async function poll(){if(pollBusy)return;pollBusy=true;const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),2500);try{const response=await fetch('/api/state',{signal:controller.signal});if(!response.ok)throw new Error(`HTTP ${response.status}`);snapshot=await response.json();$('connection').textContent=`Подключено · время симуляции ${fmt(snapshot.sim_time_s,1)} с`;$('connection').className='badge';update();}catch(error){$('connection').textContent='Нет связи с панелью';$('connection').className='badge error';}finally{clearTimeout(timeout);pollBusy=false;}}
 document.querySelectorAll('button[data-action]').forEach(button=>{if(!button.closest('form'))button.addEventListener('click',()=>send({action:button.dataset.action}));});
 $('formation-form').addEventListener('submit',event=>{event.preventDefault();send({action:'formation',formation:$('formation').value,spacing_m:Number($('spacing').value)});});
 $('manual-form').addEventListener('submit',event=>{event.preventDefault();send({action:'manual',course_deg:Number($('course').value),altitude_amsl_m:Number($('altitude').value),equivalent_airspeed_m_s:Number($('speed').value)});});
 $('mission-form').addEventListener('submit',event=>{event.preventDefault();selectedGoal=[Number($('east').value),Number($('north').value)];draw();send({action:'mission',east_m:selectedGoal[0],north_m:selectedGoal[1],arrival_radius_m:Number($('radius').value)});});
-canvas.addEventListener('click',event=>{const rect=canvas.getBoundingClientRect();selectedGoal=screenToWorld(event.clientX-rect.left,event.clientY-rect.top,canvas.clientWidth,canvas.clientHeight).map(Math.round);$('east').value=selectedGoal[0];$('north').value=selectedGoal[1];$('cursor').textContent=`Цель: E ${selectedGoal[0]} м, N ${selectedGoal[1]} м`;draw();});
-canvas.addEventListener('mousemove',event=>{const rect=canvas.getBoundingClientRect(),p=screenToWorld(event.clientX-rect.left,event.clientY-rect.top,canvas.clientWidth,canvas.clientHeight);$('cursor').textContent=`E ${fmt(p[0],0)} м · N ${fmt(p[1],0)} м`;});
-canvas.addEventListener('wheel',event=>{event.preventDefault();camera.span=Math.max(100,Math.min(20000,camera.span*(event.deltaY>0?1.2:1/1.2)));draw();},{passive:false});
+let mapDrag=null;
+function mapPointerPosition(event){
+    const rect=canvas.getBoundingClientRect();
+    return [event.clientX-rect.left-canvas.clientLeft,event.clientY-rect.top-canvas.clientTop];
+}
+function moveMap(event){
+    if(!mapDrag||event.pointerId!==mapDrag.pointerId)return;
+    const dx=event.clientX-mapDrag.x,dy=event.clientY-mapDrag.y;
+    if(!mapDrag.moved&&Math.hypot(dx,dy)<5)return;
+    mapDrag.moved=true;
+    canvas.classList.add('dragging');
+    camera.east=mapDrag.east-dx/mapDrag.scale;
+    camera.north=mapDrag.north+dy/mapDrag.scale;
+    draw();
+}
+function cancelMapDrag(){
+    const drag=mapDrag;mapDrag=null;
+    canvas.classList.remove('dragging');
+    if(drag&&canvas.hasPointerCapture(drag.pointerId))canvas.releasePointerCapture(drag.pointerId);
+}
+canvas.addEventListener('pointerdown',event=>{
+    if(event.button!==0||event.isPrimary===false||mapDrag)return;
+    const scale=Math.min(canvas.clientWidth,canvas.clientHeight)/camera.span;
+    if(!(scale>0))return;
+    event.preventDefault();
+    mapDrag={pointerId:event.pointerId,x:event.clientX,y:event.clientY,
+             east:camera.east,north:camera.north,scale,moved:false};
+    canvas.setPointerCapture(event.pointerId);
+});
+canvas.addEventListener('pointermove',event=>{
+    moveMap(event);
+    const [x,y]=mapPointerPosition(event),p=screenToWorld(x,y,canvas.clientWidth,canvas.clientHeight);
+    $('cursor').textContent=`E ${fmt(p[0],0)} м · N ${fmt(p[1],0)} м`;
+});
+canvas.addEventListener('pointerup',event=>{
+    if(!mapDrag||event.pointerId!==mapDrag.pointerId)return;
+    moveMap(event);
+    const selectGoal=!mapDrag.moved;
+    cancelMapDrag();
+    const [x,y]=mapPointerPosition(event);
+    if(!selectGoal||x<0||y<0||x>=canvas.clientWidth||y>=canvas.clientHeight)return;
+    selectedGoal=screenToWorld(x,y,canvas.clientWidth,canvas.clientHeight).map(Math.round);
+    $('east').value=selectedGoal[0];$('north').value=selectedGoal[1];
+    $('cursor').textContent=`Цель: E ${selectedGoal[0]} м, N ${selectedGoal[1]} м`;
+    draw();
+});
+for(const name of ['pointercancel','lostpointercapture'])canvas.addEventListener(name,event=>{
+    if(mapDrag&&event.pointerId===mapDrag.pointerId)cancelMapDrag();
+});
+window.addEventListener('blur',cancelMapDrag);
+canvas.addEventListener('wheel',event=>{event.preventDefault();if(mapDrag)return;camera.span=Math.max(100,Math.min(20000,camera.span*(event.deltaY>0?1.2:1/1.2)));draw();},{passive:false});
 $('fit').addEventListener('click',fit);$('zoom-in').addEventListener('click',()=>{camera.span=Math.max(100,camera.span/1.3);draw();});$('zoom-out').addEventListener('click',()=>{camera.span=Math.min(20000,camera.span*1.3);draw();});
 new ResizeObserver(draw).observe(canvas);setInterval(poll,300);poll();
 </script>
