@@ -1,9 +1,44 @@
+# Build outputs and local dependencies
 /build/
 /install/
 /log/
 /third_party/
-__pycache__/
-*.pyc
+
+# Generated experiments, reports and recordings
 /runs/
 /artifacts/
 /results/
+/evaluation_runs/
+/videos/
+/rosbags/
+observations.jsonl
+observations.jsonl.gz
+*.ulg
+*.bag
+*.mcap
+*.db3
+*.db3-*
+*.sqlite
+*.sqlite-*
+*.mp4
+*.webm
+*.mkv
+*.avi
+
+# Distribution and backup archives
+*.tar
+*.tar.*
+*.tgz
+*.zip
+*.7z
+*.bundle
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
