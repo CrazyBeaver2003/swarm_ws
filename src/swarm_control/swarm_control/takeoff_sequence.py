@@ -11,7 +11,7 @@ class TakeoffSequence:
         self.m = manager
         manager.declare_parameter(
             'takeoff_heights_m',
-            [70.0 + 35.0 * i for i in range(len(manager.ids))],
+            [70.0 for _ in manager.ids],
         )
         manager.declare_parameter('takeoff_wait_s', 330.0)
         self.heights = tuple(manager.get_parameter('takeoff_heights_m').value)

@@ -36,6 +36,7 @@ class Runner(Node):
         self.clock_received = None
         self.clock_changed = None
         self.states = {}
+        self.follower_statuses = {}
         self.mission = {}
         self.mission_received = 0.0
         self.started = False
@@ -49,6 +50,9 @@ class Runner(Node):
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
                              reliability=ReliabilityPolicy.RELIABLE)
         self.create_subscription(String, '/swarm/mission/status', self.on_mission, latched)
+        for i in self.ids[1:]:
+            self.create_subscription(String, f'/follower_{i}/status',
+                                     lambda msg, i=i: self.on_follower_status(i, msg), latched)
 
     def event(self, kind, **data):
         payload = {'event': kind, 'wall_utc': datetime.now(timezone.utc).isoformat(),
@@ -78,6 +82,73 @@ class Runner(Node):
             self.event('mission_phase', status=data)
             print(f"Mission {data.get('mission_id')}: {data.get('phase')} — {data.get('detail', '')}", flush=True)
         self.mission, self.mission_received = data, time.monotonic()
+
+    def on_follower_status(self, vehicle_id, msg):
+        try:
+            if len(msg.data) > 8192:
+                raise ValueError('Oversized follower status')
+            data = json.loads(msg.data)
+            if not isinstance(data, dict):
+                raise ValueError('Follower status must be an object')
+            numeric = (data.get('stamp_s'), data.get('transition_remaining_s'))
+            if not (type(data.get('vehicle_id')) is int and data['vehicle_id'] == vehicle_id
+                    and data.get('frame_id') == self.args.frame
+                    and type(data.get('active')) is bool and type(data.get('fault')) is bool
+                    and isinstance(data.get('entry_phase'), str)
+                    and 0 < len(data['entry_phase']) <= 64
+                    and all(type(v) in (int, float) and math.isfinite(v) and v >= 0.0
+                            for v in numeric)):
+                raise ValueError('Invalid follower status')
+        except (AttributeError, TypeError, ValueError):
+            self.follower_statuses.pop(vehicle_id, None)
+            return
+        self.follower_statuses[vehicle_id] = data, time.monotonic()
+
+    def followers_tracking(self, since_wall, since_sim):
+        if self.sim is None:
+            return False
+        now = time.monotonic()
+        for i in self.ids[1:]:
+            entry = self.follower_statuses.get(i)
+            if entry is None:
+                return False
+            status, received = entry
+            if not (received > since_wall and status['stamp_s'] > since_sim
+                    and 0.0 <= now - received <= 0.75
+                    and -0.02 <= self.sim - status['stamp_s'] <= 0.5):
+                return False
+            if status['fault']:
+                raise ScenarioError(f'Follower plane_{i} reported a fault')
+            if (not status['active'] or status['entry_phase'] != 'tracking'
+                    or status['transition_remaining_s'] > 1e-6):
+                return False
+        return True
+
+    def wait_for_followers_tracking(self):
+        # Require a new publication after the service response. A latched status
+        # from before the request must not complete this wait prematurely.
+        since_wall, since_sim = time.monotonic(), self.sim
+        if since_sim is None:
+            raise ScenarioError('No simulation time while waiting for followers')
+        stale_since = None
+
+        def ready():
+            nonlocal stale_since
+            now = time.monotonic()
+            if self.clock_changed is None or now - self.clock_changed > 3.0:
+                raise ScenarioError('/clock stopped while waiting for followers')
+            if self.healthy_group():
+                stale_since = None
+            else:
+                if stale_since is None:
+                    stale_since = now
+                elif now - stale_since > 3.0:
+                    raise ScenarioError('Group telemetry did not recover')
+                return False
+            return self.followers_tracking(since_wall, since_sim)
+
+        self.wait(ready, 600.0, 'followers tracking with completed slot transitions')
+        self.event('followers_tracking_confirmed', vehicle_ids=list(self.ids[1:]))
 
     def wait(self, predicate, timeout, description, emergency=False):
         deadline = time.monotonic() + timeout
@@ -203,11 +274,13 @@ class Runner(Node):
         else:
             self.call('/swarm/takeoff', timeout=self.args.count * 330.0 + 30.0)
             self.call('/swarm/activate', timeout=90.0)
+            self.wait_for_followers_tracking()
             self.dwell(self.args.settle)
             if self.args.scenario == 'formation':
-                for formation, spacing in (('line', 60.0), ('line', 90.0), ('wedge', 90.0), ('line', 60.0)):
+                for formation, spacing in (('line', 10.0), ('line', 20.0), ('wedge', 20.0), ('line', 10.0)):
                     self.call('/swarm/set_formation', SetFormation,
                               {'formation': formation, 'spacing_m': spacing})
+                    self.wait_for_followers_tracking()
                     self.dwell(self.args.dwell)
                 self.leader(90.0, 90.0, 15.0)
                 self.dwell(self.args.dwell)
@@ -238,8 +311,10 @@ def arguments():
     parser.add_argument('--east', type=float, default=1200.0)
     parser.add_argument('--north', type=float, default=800.0)
     parser.add_argument('--arrival-radius', type=float, default=40.0)
-    parser.add_argument('--settle', type=float, default=60.0, help='Initial formation wait, simulation seconds')
-    parser.add_argument('--dwell', type=float, default=35.0, help='Wait after each change, simulation seconds')
+    parser.add_argument('--settle', type=float, default=60.0,
+                        help='Extra observation after followers reach tracking, simulation seconds')
+    parser.add_argument('--dwell', type=float, default=35.0,
+                        help='Observation after each change (after confirmed slot transition), simulation seconds')
     parser.add_argument('--wall-timeout', type=float, default=3000.0)
     parser.add_argument('--output', type=Path, help='New directory for commands.jsonl; must not already exist')
     args = parser.parse_args()

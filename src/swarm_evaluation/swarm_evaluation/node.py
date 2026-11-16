@@ -291,7 +291,9 @@ class EvaluationNode(Node):
                 mean_delivery_delay_s=(sum(v['mean_delivery_delay_s']*v['delivered'] for v in delayed)
                                        /delivered if delivered else None))
         return dict(vehicles=vehicles, min_separation_m=min(distances) if distances else None,
-                    close_episodes=sum(episodes) if episodes else None, missions=missions, links=links)
+                    close_episodes=sum(episodes) if episodes else None,
+                    danger_distance_m=report.get('metadata', {}).get('danger_distance_m', 20.0),
+                    missions=missions, links=links)
 
     def finish_measurement_locked(self):
         if self.measurement_future is None or not self.measurement_future.done():

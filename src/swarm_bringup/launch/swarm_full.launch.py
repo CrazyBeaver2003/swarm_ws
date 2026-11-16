@@ -50,7 +50,7 @@ def generate_launch_description():
         DeclareLaunchArgument('domain_id', default_value='0'),
         DeclareLaunchArgument('gazebo_gui', default_value='true'),
         DeclareLaunchArgument('formation', default_value='wedge', choices=['line', 'wedge']),
-        DeclareLaunchArgument('spacing', default_value='60.0'),
+        DeclareLaunchArgument('spacing', default_value='10.0'),
         DeclareLaunchArgument('external_nav_state', default_value='23'),
         DeclareLaunchArgument('http_port', default_value='8080'),
         DeclareLaunchArgument('run_root', default_value=str(Path.home() / 'swarm_ws/runs')),

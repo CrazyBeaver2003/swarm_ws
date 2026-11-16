@@ -1,3 +1,4 @@
+import json
 import math
 import time
 
@@ -5,8 +6,9 @@ import rclpy
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.task import Future
+from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from swarm_interfaces.msg import VehicleState
 from swarm_interfaces.srv import SetFormation
@@ -56,9 +58,15 @@ class SwarmManager(Node):
         self.generation = 0
 
         self.states = {}
+        self.follower_statuses = {}
         self.subscriptions_ = []
         self.formation_clients = {}
         self.hold_clients = {}
+        follower_status_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
 
         for vehicle_id in self.ids:
             self.subscriptions_.append(
@@ -81,6 +89,15 @@ class SwarmManager(Node):
 
             # Первый ID в списке — лидер.
             if vehicle_id != self.ids[0]:
+                self.subscriptions_.append(
+                    self.create_subscription(
+                        String,
+                        f'/follower_{vehicle_id}/status',
+                        lambda msg, i=vehicle_id: self.receive_follower_status(i, msg),
+                        follower_status_qos,
+                        callback_group=self.group,
+                    )
+                )
                 self.formation_clients[vehicle_id] = (
                     self.create_client(
                         SetFormation,
@@ -111,6 +128,56 @@ class SwarmManager(Node):
         self.takeoff_sequence = TakeoffSequence(self)
         self.flight = FlightCoordinator(self)
         self.mission = MissionController(self)
+
+    def receive_follower_status(self, vehicle_id, message):
+        try:
+            if len(message.data.encode('utf-8')) > 4096:
+                raise ValueError('Follower status is too large')
+            status = json.loads(message.data)
+            if not isinstance(status, dict):
+                raise ValueError('Follower status must be an object')
+            if not (
+                type(status.get('vehicle_id')) is int
+                and status['vehicle_id'] == vehicle_id
+                and status.get('frame_id') == self.frame
+                and type(status.get('active')) is bool
+                and type(status.get('fault')) is bool
+                and status.get('entry_phase') in (
+                    'inactive', 'approach', 'merge', 'tracking',
+                )
+                and all(
+                    type(status.get(name)) in (int, float)
+                    and math.isfinite(status[name])
+                    for name in ('stamp_s', 'transition_remaining_s')
+                )
+                and status['transition_remaining_s'] >= 0.0
+            ):
+                raise ValueError('Invalid follower status')
+        except (ValueError, TypeError, OverflowError, UnicodeError, RecursionError):
+            self.follower_statuses.pop(vehicle_id, None)
+            return
+        self.follower_statuses[vehicle_id] = (status, time.monotonic())
+
+    def followers_not_tracking(self):
+        sim = self.get_clock().now().nanoseconds * 1e-9
+        wall = time.monotonic()
+        pending = []
+        for vehicle_id in self.ids[1:]:
+            entry = self.follower_statuses.get(vehicle_id)
+            if entry is None:
+                pending.append(vehicle_id)
+                continue
+            status, received = entry
+            if not (
+                -0.02 <= sim - status['stamp_s'] <= 0.5
+                and 0.0 <= wall - received <= 0.75
+                and status['active']
+                and not status['fault']
+                and status['entry_phase'] == 'tracking'
+                and status['transition_remaining_s'] <= 1e-6
+            ):
+                pending.append(vehicle_id)
+        return pending
 
     async def wait_until(self, predicate, timeout):
         result = Future(executor=self.executor)
@@ -208,10 +275,10 @@ class SwarmManager(Node):
         if (
             request.formation not in ('line', 'wedge')
             or not math.isfinite(request.spacing_m)
-            or not 45.0 <= request.spacing_m <= 120.0
+            or not 10.0 <= request.spacing_m <= 120.0
         ):
             response.message = (
-                'Use line/wedge and spacing_m 45..120'
+                'Use line/wedge and spacing_m 10..120'
             )
             return response
 
@@ -231,6 +298,14 @@ class SwarmManager(Node):
             response.message = (
                 f'Follower services unavailable: {missing}; '
                 'nothing sent'
+            )
+            return response
+
+        pending = self.followers_not_tracking()
+        if pending:
+            response.message = (
+                'Wait for formation assembly/transition and fresh tracking '
+                f'status from followers {pending}; nothing sent'
             )
             return response
 

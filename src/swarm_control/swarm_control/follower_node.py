@@ -1,3 +1,4 @@
+import json
 import math
 import time
 
@@ -5,7 +6,8 @@ import rclpy
 from geometry_msgs.msg import PointStamped
 from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from std_msgs.msg import String
 from std_srvs.srv import Trigger
 from swarm_interfaces.msg import (
     FixedWingCommand,
@@ -31,11 +33,13 @@ class FollowerNode(Node):
             'external_nav_state': 23,
             'frame_id': 'swarm_map',
             'origin_alt_amsl_m': 0.0,
-            'behind_m': 60.0,
+            'behind_m': 10.0,
             'right_m': 0.0,
-            'above_m': 35.0,
+            'above_m': 0.0,
             'leader_peer_prefix': '',
-            'slot_index': 1,           
+            'slot_index': 1,
+            'vehicle_count': 3,
+            'entry_lane_spacing_m': 40.0,
         }
 
         for name, value in defaults.items():
@@ -51,9 +55,16 @@ class FollowerNode(Node):
         self.above = self.get_parameter('above_m').value
 
         self.slot_index = self.get_parameter('slot_index').value
+        self.vehicle_count = self.get_parameter('vehicle_count').value
+        lane_spacing = self.get_parameter('entry_lane_spacing_m').value
 
-        if not 1 <= self.slot_index <= 4:
-            raise ValueError('slot_index must be 1..4')
+        if not 2 <= self.vehicle_count <= 5 or not 1 <= self.slot_index < self.vehicle_count:
+            raise ValueError('Need vehicle_count 2..5 and slot_index 1..vehicle_count-1')
+        if not math.isfinite(lane_spacing) or not 20.0 <= lane_spacing <= 120.0:
+            raise ValueError('entry_lane_spacing_m must be 20..120 m')
+        row = (self.slot_index + 1) // 2
+        side = -1.0 if self.slot_index % 2 else 1.0
+        self.entry_right = side * row * lane_spacing
 
         if not (
             all(
@@ -61,11 +72,11 @@ class FollowerNode(Node):
                 for value in (self.behind, self.right, self.above)
             )
             and self.behind > 0.0
-            and self.above > 0.0
+            and self.above >= 0.0
         ):
             raise ValueError(
                 'Offsets must be finite; '
-                'behind_m and above_m must be positive'
+                'behind_m must be positive and above_m nonnegative'
             )
 
         if not self.get_parameter('use_sim_time').value:
@@ -147,6 +158,13 @@ class FollowerNode(Node):
         self.last_stamp = 0
         self.last_log = 0.0
         self.status_wait_since = None
+        self.last_entry_phase = None
+        status_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                                durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.status_pub = self.create_publisher(String, '~/status', status_qos)
+        self.status_timer = self.create_timer(
+            0.2, self.publish_status, clock=self.steady_clock,
+        )
 
         self.timer = self.create_timer(
             0.05,
@@ -158,6 +176,14 @@ class FollowerNode(Node):
             'Waiting for two airborne aircraft; no automatic activation'
         )
 
+    @staticmethod
+    def slot_offset(index, formation, spacing):
+        if formation == 'line':
+            return index * spacing, 0.0
+        row = (index + 1) // 2
+        side = -1.0 if index % 2 else 1.0
+        return row * spacing, side * row * spacing * 0.8
+
     def set_formation(self, request, response):
         try:
             formation = request.formation
@@ -168,9 +194,9 @@ class FollowerNode(Node):
 
             if (
                 not math.isfinite(spacing)
-                or not 45.0 <= spacing <= 120.0
+                or not 10.0 <= spacing <= 120.0
             ):
-                raise ValueError('spacing_m must be 45..120')
+                raise ValueError('spacing_m must be 10..120')
 
             if self.fault or not self.active:
                 raise ValueError(
@@ -194,19 +220,26 @@ class FollowerNode(Node):
                 )
 
             index = self.slot_index
+            behind, right = self.slot_offset(index, formation, spacing)
+            same_target = (abs(behind - self.behind) < 1e-9
+                           and abs(right - self.right) < 1e-9)
+            if not same_target and self.core.entry_phase in ('approach', 'merge'):
+                raise ValueError('Formation entry in progress; wait for all followers to join')
+            if not same_target and self.core.transition_remaining_s > 1e-6:
+                raise ValueError('Slot transition in progress; wait before changing formation')
 
-            if formation == 'line':
-                behind = index * spacing
-                right = 0.0
-
-            else:
-                row = (index + 1) // 2
-                side = -1.0 if index % 2 else 1.0
-
-                behind = row * spacing
-                right = side * row * spacing * 0.8
-
-            self.core.set_slot(behind, right)
+            # Every node computes the duration of the longest slot movement.
+            # Equal progress prevents faster slots from cutting through their
+            # neighbours when all aircraft fly at the same altitude.
+            old_formation = 'line' if abs(self.right) < 1e-9 else 'wedge'
+            old_spacing = self.behind / (index if old_formation == 'line' else (index + 1) // 2)
+            longest = max(
+                math.dist(self.slot_offset(i, old_formation, old_spacing),
+                          self.slot_offset(i, formation, spacing))
+                for i in range(1, self.vehicle_count)
+            )
+            transition_duration = longest / 1.0  # At most 1 m/s for the farthest slot.
+            self.core.set_slot(behind, right, transition_duration_s=transition_duration)
 
             # Сохраняем принятую цель для последующих сбросов ядра.
             self.behind = behind
@@ -234,11 +267,25 @@ class FollowerNode(Node):
             behind=old.behind if old is not None else self.behind,
             above=self.above,
             right=old.right if old is not None else self.right,
+            entry_right_m=self.entry_right,
         )
 
-        controller.set_slot(self.behind, self.right)
+        remaining = old.transition_remaining_s if old is not None else None
+        controller.set_slot(self.behind, self.right, transition_duration_s=remaining)
 
         return controller
+
+    def publish_status(self):
+        self.status_pub.publish(String(data=json.dumps({
+            'vehicle_id': self.follower,
+            'frame_id': self.frame,
+            'stamp_s': self.get_clock().now().nanoseconds * 1e-9,
+            'active': self.active,
+            'fault': self.fault,
+            'entry_phase': self.core.entry_phase,
+            'transition_remaining_s': self.core.transition_remaining_s,
+            'entry_diagnostics': self.core.entry_diagnostics,
+        }, allow_nan=False)))
     
     def sample(self, vehicle_id, kind, sim, wall):
         entry = self.cache.get((vehicle_id, kind))
@@ -533,6 +580,9 @@ class FollowerNode(Node):
             dt,
             active,
         )
+        if self.core.entry_phase != self.last_entry_phase:
+            self.get_logger().info(f'Formation entry phase: {self.core.entry_phase}')
+            self.last_entry_phase = self.core.entry_phase
 
         stamp = self.system_clock.now()
 
@@ -567,11 +617,21 @@ class FollowerNode(Node):
                 target[1] - states[1].y,
             )
             error_z = target[2] - states[1].z
+            entry = self.core.entry_diagnostics
+            filtered = entry.get('filtered', {})
+            entry_details = ''
+            if filtered:
+                entry_details = (
+                    f", entry along/lateral={filtered['along_m']:.1f}/"
+                    f"{filtered['lateral_m']:.1f}m, "
+                    f"speed error={filtered['speed_m_s']:.1f}m/s, "
+                    f"ready={entry['ready_s']:.1f}s, aligned={entry['aligned']}"
+                )
 
             self.get_logger().info(
-                f'active={active}, '
+                f'active={active}, entry={self.core.entry_phase}, '
                 f'slot error: xy={error_xy:.1f}m, '
-                f'z={error_z:.1f}m'
+                f'z={error_z:.1f}m{entry_details}'
             )
 
             self.last_log = wall

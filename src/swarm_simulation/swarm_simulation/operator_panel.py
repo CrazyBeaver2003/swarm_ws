@@ -78,7 +78,7 @@ def validate_command(payload, origin=0.0):
         if payload['formation'] not in ('line', 'wedge'):
             raise ValueError('Формация: line или wedge')
         result.update(formation=payload['formation'],
-                      spacing_m=number(payload['spacing_m'], 'Интервал, м', 45.0, 120.0))
+                      spacing_m=number(payload['spacing_m'], 'Интервал, м', 10.0, 120.0))
     elif action == 'manual':
         course = math.radians(number(payload['course_deg'], 'Курс, градусы', 0.0, 360.0))
         result.update(course_rad=math.atan2(math.sin(course), math.cos(course)),

@@ -26,9 +26,9 @@ class MissionController:
             'mission_turn_radius_m': 350.0,
             'mission_airspeed_m_s': 15.0,
             'mission_lookahead_m': 70.0,
-            'mission_assembly_tolerance_m': 20.0,
-            'mission_assembly_settle_s': 3.0,
-            'mission_assembly_timeout_s': 360.0,
+            'mission_assembly_tolerance_m': 3.0,
+            'mission_assembly_settle_s': 5.0,
+            'mission_assembly_timeout_s': 600.0,
             'mission_route_timeout_s': 900.0,
         }
         for name, value in defaults.items():
@@ -44,9 +44,9 @@ class MissionController:
         values = (self.height, self.radius, self.speed, self.lookahead,
                   self.tolerance, self.settle, self.assembly_timeout, self.route_timeout)
         if not (all(math.isfinite(v) for v in values)
-                and 40.0 <= self.height <= 250.0-35.0*(len(manager.ids)-1)
+                and 40.0 <= self.height <= 250.0
                 and 120.0 <= self.radius <= 2000.0 and 10.0 <= self.speed <= 19.0
-                and 20.0 <= self.lookahead <= 300.0 and 5.0 <= self.tolerance <= 50.0
+                and 20.0 <= self.lookahead <= 300.0 and 1.0 <= self.tolerance <= 50.0
                 and 0.5 <= self.settle <= 15.0 and 10.0 <= self.assembly_timeout <= 1200.0
                 and 30.0 <= self.route_timeout <= 3600.0):
             raise ValueError('Invalid mission height, geometry or timeouts')
@@ -214,7 +214,7 @@ class MissionController:
         return True
 
     def formation_ready(self):
-        if not self.group_ready():
+        if not self.group_ready() or self.m.followers_not_tracking():
             return False
         for i in self.m.ids[1:]:
             entry = self.targets.get(i)

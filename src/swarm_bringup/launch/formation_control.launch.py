@@ -23,8 +23,8 @@ def setup(context):
     if not 2 <= count <= 5:
         raise ValueError('count must be 2..5')
 
-    if not math.isfinite(spacing) or not 45.0 <= spacing <= 120.0:
-        raise ValueError('spacing must be 45..120 m')
+    if not math.isfinite(spacing) or not 10.0 <= spacing <= 120.0:
+        raise ValueError('spacing must be 10..120 m')
 
     if not 23 <= external <= 30:
         raise ValueError('external_nav_state must be 23..30')
@@ -70,8 +70,9 @@ def setup(context):
                         'external_nav_state': external,
                         'behind_m': float(behind),
                         'right_m': float(right),
-                        'above_m': float(35.0 * index),
+                        'above_m': 0.0,
                         'slot_index': index,
+                        'vehicle_count': count,
                     },
                 ],
                 output='screen',
@@ -88,9 +89,12 @@ def setup(context):
                     'vehicle_ids': list(range(1, count + 1)),
                     'external_nav_state': external,
                     'takeoff_heights_m': [
-                        70.0 + 35.0 * i for i in range(count)
+                        70.0 for _ in range(count)
                     ],
                     'takeoff_wait_s': 330.0,
+                    # Compact Gazebo preset. Standalone guard defaults stay intact.
+                    'minimum_separation_m': 5.0,
+                    'separation_horizon_s': 2.0,
                 },
             ],
             output='screen',
@@ -114,7 +118,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'spacing',
-            default_value='60.0',
+            default_value='10.0',
         ),
         DeclareLaunchArgument(
             'external_nav_state',
